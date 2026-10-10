@@ -122,9 +122,10 @@
 
       <section class="card" id="grCard">
         <h2>Grimaces</h2>
+        <label style="margin:0 0 8px;display:flex;gap:8px;align-items:center;color:var(--text)"><input type="checkbox" id="grFun"> Mode amusant (sinon les avatars restent sérieux)</label>
         <div class="row" id="grBtns"></div>
-        <label style="margin:8px 0 0;display:flex;gap:8px;align-items:center;color:var(--text)"><input type="checkbox" id="grAuto"> Grimaces au hasard (en boucle)</label>
-        <p class="hint">Les avatars dessinés bougent la tête, les yeux et la bouche. L'effigie et les images perso font seulement des grimaces de bouche et d'yeux. Ça marche aussi pendant qu'ils parlent.</p>
+        <label style="margin:8px 0 0;display:flex;gap:8px;align-items:center;color:var(--text)"><input type="checkbox" id="grAuto" disabled> Grimaces au hasard (en boucle)</label>
+        <p class="hint">Par défaut les avatars restent sérieux : aucune grimace, regard calme, bouche naturelle. Les avatars dessinés bougent la tête, les yeux et la bouche. L'effigie et les images perso font seulement des grimaces de bouche et d'yeux. Ça marche aussi pendant qu'ils parlent.</p>
       </section>
 
       <section class="card" id="stCard">
@@ -242,7 +243,8 @@ const S = {
   guide: true,
   eyes: { on: false, lx: .37, ly: .40, rx: .63, ry: .40, size: .09 },
   gx: 0, gy: 0, gtx: 0, gty: 0, gazeT: 1, place: 'mouth',
-  gr: { cur: null, last: 'langue', p: 0, until: 0, auto: false, nt: 0 }
+  look: 'simple',
+  gr: { cur: null, last: 'langue', p: 0, until: 0, auto: false, nt: 0, fun: false }
 };
 
 /* ---------- Visèmes (français) : [ouverture 0..1, largeur relative] ---------- */
@@ -356,80 +358,197 @@ function drawGuide(c, cx, cy, mw, rot){
   c.restore();
 }
 
-/* ---------- Avatar par défaut ---------- */
+/* ---------- Avatars dessinés : visages simples (tout est dessiné par le code) ---------- */
+const LOOKS = {
+  simple:  { bg: ['#2b3a8f', '#6b3fa0'], cloth: '#3a4ba6', cloth2: '#2d3c8c', skin: ['#f5c9a0', '#e3a97b'], neck: '#d29a6c', hair: '#2a1b16', brow: '#2a1b16', iris: '#5a3a22', lip: '#b8384d', style: 'short' },
+  karim:   { bg: ['#8ec5ff', '#b9a7ff'], cloth: '#ff8a3d', cloth2: '#e5702a', skin: ['#f7cba5', '#ebb48a'], neck: '#d79a70', hair: '#1f1a1a', brow: '#1f1a1a', iris: '#4a2f1d', lip: '#4a2a22', style: 'bun' },
+  yasmine: { bg: ['#ffe8c2', '#ffc0a8'], cloth: '#f2b134', cloth2: '#d99a20', skin: ['#f8d3b3', '#efb995'], neck: '#e7b08a', hair: '#2a9d8f', hair2: '#17706f', brow: '#3a2a22', iris: '#3b2a20', lip: '#b23a55', style: 'hijab', lash: 1 },
+  fennec:  { bg: ['#7fd0f2', '#f6a96b'], cloth: '#fff1d6', cloth2: '#d94f4f', skin: ['#f6c47f', '#eaa55a'], neck: '#eaa55a', hair: '#f2b76f', brow: '#8a4b2a', iris: '#3a2314', lip: '#4a2a22', style: 'fennec', es: 1.18 },
+  lina:    { bg: ['#ffd1ec', '#c4b5fd'], cloth: '#8e5bd8', cloth2: '#7040c0', skin: ['#d9a07a', '#c28559'], neck: '#b87850', hair: '#4a2c1a', brow: '#3a2417', iris: '#3a2417', lip: '#a8324f', style: 'curly', lash: 1, freckles: 1 },
+  hakim:   { bg: ['#e6efc2', '#9ccf8f'], cloth: '#8b5a36', cloth2: '#6a4226', skin: ['#e6b588', '#d39d70'], neck: '#c78d62', hair: '#f4f1ea', brow: '#f4f1ea', iris: '#4a2f1d', lip: '#7a3b2e', style: 'chechia', es: .95 },
+  robo:    { bg: ['#3a3f9a', '#12163f'], cloth: '#4f6df5', cloth2: '#19c3ff', skin: ['#cfd8e3', '#aab6c6'], neck: '#8fa3b8', hair: '#8fa3b8', brow: '', iris: '#19c3ff', eyeW: '#e8f6ff', lid: '#19c3ff', lip: '#19c3ff', style: 'robot', pal: 'robo' },
+  samir:   { bg: ['#dfe7ec', '#9fb4c2'], cloth: '#c9a56b', cloth2: '#b8914f', skin: ['#ebb88c', '#d9a073'], neck: '#c78d62', hair: '#5a3a22', brow: '#3a2415', iris: '#3b2a20', lip: '#6b3a2a', style: 'quiff' },
+  nadia:   { bg: ['#fff1b8', '#ffcf6b'], cloth: '#8e2f4a', cloth2: '#a23a58', skin: ['#f1c29c', '#e1a67c'], neck: '#d79d74', hair: '#1d1a24', brow: '#1d1a24', iris: '#4a2f1d', lip: '#b02a4e', style: 'bob', lash: 1 },
+  zak:     { bg: ['#bff0ff', '#4cc9f0'], cloth: '#ffd23f', cloth2: '#e6b21f', skin: ['#e3b088', '#d09468'], neck: '#c98f66', hair: '#4a2c1a', brow: '#3a2415', iris: '#2f2a1c', lip: '#a8483a', style: 'cap' }
+};
+const sh = (c, col, fn) => { c.fillStyle = col; c.beginPath(); fn(c); c.fill(); };
+const mir = x => 640 - x;
+
+function drawBody(c, L){
+  const st = L.style;
+  if (st === 'robot'){
+    sh(c, L.cloth, k => k.ellipse(320, 665, 235, 165, 0, Math.PI, 2 * Math.PI));
+    c.fillStyle = L.neck; c.fillRect(278, 468, 84, 64);
+    c.fillStyle = 'rgba(0,0,0,.25)'; c.fillRect(278, 490, 84, 4); c.fillRect(278, 508, 84, 4);
+    sh(c, L.cloth2, k => k.arc(320, 600, 24, 0, 7)); sh(c, '#e8f6ff', k => k.arc(320, 600, 10, 0, 7));
+    return;
+  }
+  sh(c, L.cloth, k => k.ellipse(320, 665, 255, 175, 0, Math.PI, 2 * Math.PI));
+  if (st !== 'hijab'){ c.fillStyle = L.neck; c.fillRect(282, 440, 76, 100); c.fillStyle = 'rgba(0,0,0,.14)'; c.fillRect(282, 440, 76, 26); }
+  if (st === 'bun' || st === 'cap'){
+    sh(c, L.cloth2, k => { k.moveTo(262, 520); k.quadraticCurveTo(320, 600, 378, 520); k.quadraticCurveTo(320, 560, 262, 520); });
+    c.strokeStyle = '#fff'; c.lineWidth = 4; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(296, 575); c.lineTo(290, 640); c.moveTo(344, 575); c.lineTo(350, 640); c.stroke();
+    sh(c, '#fff', k => { k.arc(290, 646, 6, 0, 7); k.moveTo(356, 646); k.arc(350, 646, 6, 0, 7); });
+  } else if (st === 'fennec'){
+    sh(c, L.cloth2, k => { k.moveTo(215, 540); k.quadraticCurveTo(320, 640, 425, 540); k.lineTo(440, 600); k.quadraticCurveTo(320, 680, 200, 600); });
+    sh(c, L.cloth2, k => { k.moveTo(370, 620); k.lineTo(390, 690); k.lineTo(425, 680); k.lineTo(405, 612); });
+  } else if (st === 'curly'){
+    sh(c, L.neck, k => { k.moveTo(262, 520); k.lineTo(320, 600); k.lineTo(378, 520); });
+  } else if (st === 'chechia' || st === 'quiff' || st === 'bob'){
+    sh(c, st === 'bob' ? '#fbf7f0' : '#f5efe0', k => { k.moveTo(262, 515); k.lineTo(320, 590); k.lineTo(378, 515); });
+    c.fillStyle = L.cloth2;
+    if (st === 'quiff'){ sh(c, L.cloth2, k => { k.moveTo(236, 520); k.lineTo(280, 470); k.lineTo(318, 580); }); sh(c, L.cloth2, k => { k.moveTo(404, 520); k.lineTo(360, 470); k.lineTo(322, 580); }); }
+    if (st === 'bob'){ sh(c, L.cloth2, k => { k.moveTo(236, 520); k.lineTo(300, 520); k.lineTo(262, 610); }); sh(c, L.cloth2, k => { k.moveTo(404, 520); k.lineTo(340, 520); k.lineTo(378, 610); }); sh(c, '#f2c14e', k => k.arc(250, 600, 8, 0, 7)); }
+  }
+}
+
+function headBack(c, L){
+  const st = L.style, H = L.hair;
+  if (st === 'robot'){
+    c.strokeStyle = '#0b1530'; c.lineWidth = 7; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(320, 150); c.lineTo(320, 82); c.stroke();
+    sh(c, '#ff5d73', k => k.arc(320, 70, 18, 0, 7));
+    c.fillStyle = L.neck; c.fillRect(128, 285, 38, 110); c.fillRect(474, 285, 38, 110);
+    c.fillStyle = L.skin[0]; rr(c, 160, 150, 320, 350, 90); c.fill();
+    c.fillStyle = 'rgba(255,255,255,.55)'; rr(c, 196, 168, 70, 10, 5); c.fill();
+    c.fillStyle = '#0f1a35'; rr(c, 200, 212, 240, 262, 60); c.fill();
+    return;
+  }
+  if (st === 'bob'){ sh(c, H, k => { k.moveTo(165, 300); k.bezierCurveTo(150, 170, 230, 112, 320, 112); k.bezierCurveTo(410, 112, 490, 170, 475, 300); k.bezierCurveTo(478, 380, 468, 440, 452, 484); k.lineTo(188, 484); k.bezierCurveTo(172, 440, 162, 380, 165, 300); }); }
+  else if (st === 'hijab'){
+    sh(c, H, k => { k.moveTo(112, 470); k.bezierCurveTo(88, 240, 190, 100, 320, 100); k.bezierCurveTo(450, 100, 552, 240, 528, 470); k.bezierCurveTo(540, 540, 565, 600, 590, 650); k.lineTo(50, 650); k.bezierCurveTo(75, 600, 100, 540, 112, 470); });
+    c.strokeStyle = L.hair2; c.lineWidth = 4; c.beginPath(); c.moveTo(250, 520); c.quadraticCurveTo(240, 590, 225, 650); c.moveTo(390, 520); c.quadraticCurveTo(400, 590, 415, 650); c.stroke();
+  }
+  else if (st === 'fennec'){
+    [1, -1].forEach(d => { const X = x => d > 0 ? x : mir(x);
+      sh(c, H, k => { k.moveTo(X(150), 270); k.bezierCurveTo(X(92), 160, X(98), 50, X(145), 6); k.bezierCurveTo(X(205), 60, X(255), 135, X(268), 215); });
+      sh(c, '#f6c1b8', k => { k.moveTo(X(160), 225); k.bezierCurveTo(X(132), 160, X(134), 95, X(147), 62); k.bezierCurveTo(X(178), 98, X(207), 140, X(218), 192); }); });
+  }
+  else if (st === 'curly'){
+    c.fillStyle = H;
+    [[130, 260, 50], [118, 345, 48], [138, 420, 44], [152, 478, 38], [510, 260, 50], [522, 345, 48], [502, 420, 44], [488, 478, 38], [210, 160, 56], [320, 138, 64], [430, 160, 56], [150, 200, 46], [490, 200, 46]]
+      .forEach(([x, y, r]) => { c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); });
+  }
+  else if (st === 'bun'){ sh(c, H, k => k.arc(330, 112, 34, 0, 7)); c.fillStyle = '#e63946'; c.fillRect(300, 134, 60, 8); }
+  else if (st === 'cap'){ c.fillStyle = H; [[172, 262, 22], [172, 310, 20], [468, 262, 22], [468, 310, 20]].forEach(([x, y, r]) => { c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); }); }
+}
+
+function headMid(c, L){
+  const st = L.style;
+  if (st === 'hakim' || st === 'chechia'){
+    sh(c, L.hair, k => { k.moveTo(172, 345); k.bezierCurveTo(165, 450, 215, 545, 320, 556); k.bezierCurveTo(425, 545, 475, 450, 468, 345); k.bezierCurveTo(452, 395, 422, 410, 385, 410); k.lineTo(255, 410); k.bezierCurveTo(218, 410, 188, 395, 172, 345); });
+    c.strokeStyle = '#c9c4b8'; c.lineWidth = 3; c.beginPath(); c.moveTo(225, 480); c.quadraticCurveTo(245, 520, 275, 530); c.moveTo(415, 480); c.quadraticCurveTo(395, 520, 365, 530); c.stroke();
+  } else if (st === 'quiff'){
+    sh(c, 'rgba(58,42,34,.28)', k => { k.moveTo(172, 370); k.bezierCurveTo(176, 470, 230, 500, 320, 500); k.bezierCurveTo(410, 500, 464, 470, 468, 370); k.bezierCurveTo(440, 418, 402, 428, 320, 428); k.bezierCurveTo(238, 428, 200, 418, 172, 370); });
+  } else if (st === 'fennec'){
+    sh(c, '#fff1d6', k => k.ellipse(320, 430, 112, 72, 0, 0, 7));
+    sh(c, L.skin[1], k => { k.moveTo(188, 380); k.lineTo(128, 410); k.lineTo(196, 430); }); sh(c, L.skin[1], k => { k.moveTo(452, 380); k.lineTo(512, 410); k.lineTo(444, 430); });
+  }
+}
+
+function headFront(c, L){
+  const st = L.style, H = L.hair;
+  if (st === 'short' || st === 'bun' || st === 'quiff'){
+    sh(c, H, k => { k.ellipse(320, 262, 160, 140, 0, Math.PI, 2 * Math.PI); k.lineTo(472, 292); k.quadraticCurveTo(420, 222, 330, 238); k.quadraticCurveTo(250, 252, 168, 292); });
+    if (st === 'quiff'){ sh(c, H, k => { k.moveTo(190, 190); k.bezierCurveTo(200, 120, 330, 92, 430, 118); k.bezierCurveTo(480, 134, 508, 160, 512, 196); k.bezierCurveTo(440, 150, 300, 150, 190, 190); }); }
+    c.strokeStyle = 'rgba(255,255,255,.18)'; c.lineWidth = 5; c.beginPath(); c.moveTo(230, 170); c.quadraticCurveTo(320, 140, 410, 168); c.stroke();
+  } else if (st === 'hijab'){
+    sh(c, H, k => { k.moveTo(166, 320); k.bezierCurveTo(160, 200, 240, 140, 320, 140); k.bezierCurveTo(400, 140, 480, 200, 474, 320); k.bezierCurveTo(452, 262, 396, 220, 320, 220); k.bezierCurveTo(244, 220, 188, 262, 166, 320); });
+  } else if (st === 'curly'){
+    c.fillStyle = H; [[238, 190, 32], [282, 176, 32], [326, 170, 32], [370, 176, 32], [414, 190, 32], [450, 214, 28], [200, 214, 28]].forEach(([x, y, r]) => { c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); });
+    c.strokeStyle = '#ffc83d'; c.lineWidth = 16; c.lineCap = 'round'; c.beginPath(); c.moveTo(168, 262); c.bezierCurveTo(180, 120, 460, 120, 472, 262); c.stroke();
+  } else if (st === 'chechia'){
+    sh(c, '#c0392b', k => { k.moveTo(182, 238); k.lineTo(196, 138); k.bezierCurveTo(215, 102, 425, 102, 444, 138); k.lineTo(458, 238); k.bezierCurveTo(410, 256, 230, 256, 182, 238); });
+    c.strokeStyle = '#962d22'; c.lineWidth = 4; c.beginPath(); c.moveTo(190, 214); c.bezierCurveTo(250, 236, 390, 236, 450, 214); c.stroke();
+    c.strokeStyle = '#1d3557'; c.lineWidth = 4; c.beginPath(); c.moveTo(320, 112); c.bezierCurveTo(360, 92, 410, 112, 408, 160); c.stroke();
+    c.fillStyle = '#1d3557'; rr(c, 396, 158, 22, 44, 6); c.fill();
+  } else if (st === 'bob'){
+    sh(c, H, k => { k.moveTo(170, 300); k.bezierCurveTo(165, 190, 255, 150, 330, 156); k.bezierCurveTo(405, 162, 475, 205, 470, 300); k.bezierCurveTo(452, 252, 405, 224, 340, 220); k.bezierCurveTo(262, 220, 200, 246, 170, 300); });
+    c.strokeStyle = 'rgba(160,150,190,.5)'; c.lineWidth = 5; c.beginPath(); c.moveTo(220, 182); c.quadraticCurveTo(300, 158, 380, 170); c.stroke();
+    sh(c, '#f2c14e', k => { k.arc(168, 440, 8, 0, 7); k.moveTo(480, 440); k.arc(472, 440, 8, 0, 7); });
+  } else if (st === 'cap'){
+    sh(c, '#e63946', k => { k.moveTo(172, 234); k.bezierCurveTo(172, 135, 250, 102, 320, 102); k.bezierCurveTo(390, 102, 468, 135, 468, 234); });
+    sh(c, '#b02b37', k => { k.moveTo(156, 232); k.bezierCurveTo(220, 208, 420, 208, 484, 232); k.bezierCurveTo(450, 258, 190, 258, 156, 232); });
+    sh(c, '#fff', k => k.arc(320, 152, 18, 0, 7)); sh(c, '#e63946', k => { k.moveTo(309, 152); k.lineTo(320, 141); k.lineTo(331, 152); k.lineTo(320, 163); });
+    c.strokeStyle = '#2a2d44'; c.lineWidth = 16; c.lineCap = 'round'; c.beginPath(); c.moveTo(150, 335); c.bezierCurveTo(140, 20, 500, 20, 490, 335); c.stroke();
+    c.fillStyle = '#2b2d42'; rr(c, 122, 290, 40, 84, 18); c.fill(); rr(c, 478, 290, 40, 84, 18); c.fill();
+    c.fillStyle = '#4cc9f0'; rr(c, 132, 312, 12, 40, 6); c.fill(); rr(c, 496, 312, 12, 40, 6); c.fill();
+  }
+}
+
 function drawAvatar(c, t, open, wid, eye){
-  const W = 640, H = 640;
-  const g = c.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, '#2b3a8f'); g.addColorStop(1, '#6b3fa0');
-  c.fillStyle = g; c.fillRect(0, 0, W, H);
-  c.fillStyle = 'rgba(255,255,255,.06)';
-  [[90,110,60],[540,90,38],[560,420,70],[70,470,44]].forEach(([x,y,r]) => { c.beginPath(); c.arc(x,y,r,0,7); c.fill(); });
+  const L = LOOKS[S.look] || LOOKS.simple, g = grimState(), gp = g ? g.p : 0, q = 1 - gp, rb = L.style === 'robot';
+  if (!S.st.on){
+    const gr = c.createLinearGradient(0, 0, 0, 640); gr.addColorStop(0, L.bg[0]); gr.addColorStop(1, L.bg[1]);
+    c.fillStyle = gr; c.fillRect(0, 0, 640, 640);
+    c.fillStyle = 'rgba(255,255,255,.12)';
+    [[90, 110, 60], [540, 90, 38], [560, 420, 70], [70, 470, 44]].forEach(([x, y, r]) => { c.beginPath(); c.arc(x, y, r, 0, 7); c.fill(); });
+  }
+  drawBody(c, L);
 
-  // épaules + cou (fixes)
-  c.fillStyle = '#3a4ba6';
-  c.beginPath(); c.ellipse(320, 650, 250, 150, 0, Math.PI, 2*Math.PI); c.fill();
-  c.fillStyle = '#d29a6c'; c.fillRect(282, 440, 76, 100);
-  c.fillStyle = 'rgba(0,0,0,.14)'; c.fillRect(282, 440, 76, 26);
-
-  // tête (léger balancement)
   c.save();
-  c.translate(0, Math.sin(t * 6) * open * 3);
-  c.rotate(Math.sin(t * 1.3) * .012);
-
-  c.fillStyle = '#d9a073';
-  c.beginPath(); c.ellipse(176, 335, 24, 38, 0, 0, 7); c.fill();
-  c.beginPath(); c.ellipse(464, 335, 24, 38, 0, 0, 7); c.fill();
-
-  const sk = c.createRadialGradient(300, 290, 30, 320, 330, 200);
-  sk.addColorStop(0, '#f5c9a0'); sk.addColorStop(1, '#e3a97b');
-  c.fillStyle = sk;
-  c.beginPath(); c.ellipse(320, 325, 150, 175, 0, 0, 7); c.fill();
-
-  // cheveux
-  c.fillStyle = '#2a1b16';
-  c.beginPath();
-  c.ellipse(320, 262, 160, 140, 0, Math.PI, 2 * Math.PI);
-  c.lineTo(472, 292); c.quadraticCurveTo(420, 222, 330, 238); c.quadraticCurveTo(250, 252, 168, 292);
-  c.closePath(); c.fill();
-
-  // sourcils
-  const r = open * 5;
-  c.strokeStyle = '#2a1b16'; c.lineWidth = 9; c.lineCap = 'round';
-  c.beginPath(); c.moveTo(222, 292 - r); c.quadraticCurveTo(255, 278 - r, 290, 288 - r); c.stroke();
-  c.beginPath(); c.moveTo(350, 288 - r); c.quadraticCurveTo(385, 278 - r, 418, 292 - r); c.stroke();
+  const px = 320, py = 480;
+  c.translate(px, py); c.rotate(Math.sin(t * 1.3) * .012 + (g ? g.rot : 0)); c.scale(g ? g.sx : 1, g ? g.sy : 1); c.translate(-px, -py + Math.sin(t * 6) * open * 3);
+  headBack(c, L);
+  if (!rb){
+    c.fillStyle = L.skin[1];
+    c.beginPath(); c.ellipse(176, 335, 24, 38, 0, 0, 7); c.fill(); c.beginPath(); c.ellipse(464, 335, 24, 38, 0, 0, 7); c.fill();
+    const fr = L.style === 'fennec' ? [172, 165, 335] : [150, 175, 325];
+    const sk = c.createRadialGradient(300, fr[2] - 35, 30, 320, fr[2] + 5, 200);
+    sk.addColorStop(0, L.skin[0]); sk.addColorStop(1, L.skin[1]);
+    c.fillStyle = sk; c.beginPath(); c.ellipse(320, fr[2], fr[0], fr[1], 0, 0, 7); c.fill();
+    headMid(c, L);
+    headFront(c, L);
+    // sourcils
+    const r = open * 5;
+    c.strokeStyle = L.brow; c.lineWidth = L.style === 'chechia' ? 13 : 9; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(222, 292 - r); c.quadraticCurveTo(255, 278 - r, 290, 288 - r); c.stroke();
+    c.beginPath(); c.moveTo(350, 288 - r); c.quadraticCurveTo(385, 278 - r, 418, 292 - r); c.stroke();
+  }
 
   // yeux
-  const look = Math.sin(t * .7) * 4;
-  [[258], [382]].forEach(([ex]) => {
-    const ey = 326;
-    if (eye > .15){
-      c.fillStyle = '#fff'; c.beginPath(); c.ellipse(ex, ey, 31, 23 * eye, 0, 0, 7); c.fill();
-      c.save(); c.beginPath(); c.ellipse(ex, ey, 31, 23 * eye, 0, 0, 7); c.clip();
-      c.fillStyle = '#5a3a22'; c.beginPath(); c.arc(ex + look, ey, 14, 0, 7); c.fill();
-      c.fillStyle = '#120a06'; c.beginPath(); c.arc(ex + look, ey, 7, 0, 7); c.fill();
-      c.fillStyle = '#fff'; c.beginPath(); c.arc(ex + look + 4, ey - 5, 3.5, 0, 7); c.fill();
+  const es = L.es || 1, ly = S.gy * 3 * q;
+  [[258, g ? g.gzL : 0, g ? g.lidL : 0, -1], [382, g ? g.gzR : 0, g ? g.lidR : 0, 1]].forEach(([ex, gz, lid, side]) => {
+    const e = eye * (1 - lid), ey = 326, rx = 31 * es, ry = 24 * es, lx = S.gx * 5 * q + gz * 9, look = Math.max(-9, Math.min(9, lx));
+    c.strokeStyle = L.lid || '#2a1b16'; c.lineWidth = 4;
+    if (e > .15){
+      c.fillStyle = L.eyeW || '#fff'; c.beginPath(); c.ellipse(ex, ey, rx, ry * e, 0, 0, 7); c.fill();
+      c.save(); c.beginPath(); c.ellipse(ex, ey, rx, ry * e, 0, 0, 7); c.clip();
+      c.fillStyle = L.iris; c.beginPath(); c.arc(ex + look, ey + ly, 14 * es, 0, 7); c.fill();
+      c.fillStyle = '#120a06'; c.beginPath(); c.arc(ex + look, ey + ly, 7 * es, 0, 7); c.fill();
+      c.fillStyle = '#fff'; c.beginPath(); c.arc(ex + look + 4, ey + ly - 5, 3.5 * es, 0, 7); c.fill();
       c.restore();
     }
-    c.strokeStyle = '#2a1b16'; c.lineWidth = 4;
-    c.beginPath(); c.ellipse(ex, ey, 31, 23 * Math.max(eye, .02), 0, Math.PI, 2 * Math.PI); c.stroke();
-    if (eye <= .15){ c.beginPath(); c.moveTo(ex - 31, ey); c.lineTo(ex + 31, ey); c.stroke(); }
+    c.beginPath(); c.ellipse(ex, ey, rx, ry * Math.max(e, .02), 0, Math.PI, 2 * Math.PI); c.stroke();
+    if (e <= .15){ c.beginPath(); c.moveTo(ex - rx, ey); c.lineTo(ex + rx, ey); c.stroke(); }
+    if (L.lash && !rb){ c.lineWidth = 4; c.beginPath(); c.moveTo(ex + side * rx, ey - 4); c.lineTo(ex + side * (rx + 9), ey - 14); c.moveTo(ex + side * (rx - 6), ey - 12); c.lineTo(ex + side * (rx + 2), ey - 24); c.stroke(); }
   });
 
-  // nez + joues
-  c.strokeStyle = '#c28a5e'; c.lineWidth = 5;
-  c.beginPath(); c.moveTo(322, 336); c.quadraticCurveTo(306, 378, 322, 384); c.stroke();
-  c.fillStyle = 'rgba(255,110,120,.22)';
-  c.beginPath(); c.arc(222, 392, 30, 0, 7); c.fill();
-  c.beginPath(); c.arc(418, 392, 30, 0, 7); c.fill();
+  if (!rb){
+    // nez + joues
+    c.strokeStyle = 'rgba(120,70,40,.55)'; c.lineWidth = 5; c.lineCap = 'round';
+    if (L.style === 'fennec'){ sh(c, '#2a1a17', k => { k.moveTo(298, 392); k.quadraticCurveTo(320, 382, 342, 392); k.quadraticCurveTo(334, 414, 320, 420); k.quadraticCurveTo(306, 414, 298, 392); }); }
+    else { c.beginPath(); c.moveTo(322, 336); c.quadraticCurveTo(306, 378, 322, 384); c.stroke(); }
+  }
+  c.fillStyle = 'rgba(255,110,120,' + (L.lash ? .3 : .2) + ')';
+  c.beginPath(); c.arc(222, 392, 30, 0, 7); c.fill(); c.beginPath(); c.arc(418, 392, 30, 0, 7); c.fill();
+  if (L.freckles){ c.fillStyle = 'rgba(120,60,30,.55)'; [[268, 405], [290, 414], [312, 402], [372, 402], [350, 414], [372, 418]].forEach(([x, y]) => { c.beginPath(); c.arc(x, y, 3.5, 0, 7); c.fill(); }); }
+  if (L.style === 'chechia'){ sh(c, L.skin[1], k => k.ellipse(320, 408, 25, 20, 0, 0, 7)); sh(c, L.hair, k => { k.moveTo(232, 436); k.bezierCurveTo(262, 402, 306, 410, 320, 428); k.bezierCurveTo(334, 410, 378, 402, 408, 436); k.bezierCurveTo(380, 462, 346, 448, 320, 452); k.bezierCurveTo(294, 448, 260, 462, 232, 436); }); }
 
-  drawMouth(c, 320, 440, 110, open, wid, 0, '#b8384d');
+  // bouche
+  let mo = open, mw = wid, mr = 0, tg = 0;
+  if (g){ const w = g.p * .85; mo = open * (1 - w) + g.open * w; mw = wid * (1 - w) + g.wid * w; mr = g.mrot; tg = g.tg; }
+  drawMouth(c, 320, 440, 110, mo, mw, mr, L.lip, rb ? ROBO_PAL : (L.style === 'fennec' ? CARTOON_PAL : null), tg);
   c.restore();
 }
 
 /* ---------- Yeux (image) : regard + clignement ---------- */
-const EP = document.createElement('canvas'), EC = EP.getContext('2d');
+const EPS = [0, 1, 2, 3].map(() => { const k = document.createElement('canvas'); return [k, k.getContext('2d')]; });
+let EP = EPS[0][0], EC = EPS[0][1];     // un canevas distinct par œil et par étape : évite tout mélange d'un œil à l'autre
 
-function eyePatchBegin(ps){
+function eyePatchBegin(ps, slot){
+  EP = EPS[slot][0]; EC = EPS[slot][1];
   if (EP.width !== ps){ EP.width = ps; EP.height = ps; }
   EC.setTransform(1, 0, 0, 1, 0, 0);
   EC.globalCompositeOperation = 'source-over';
@@ -447,12 +566,12 @@ function eyeMask(ps, rx, ry, f){       // masque elliptique, opaque jusqu'à f×
   EC.restore();
 }
 
-function drawEye(c, ex, ey, ew, gx, gy, lid){
+function drawEye(c, ex, ey, ew, gx, gy, lid, side){
   const E = S.eyes, eh = ew * (E.ar || .2), ps = Math.ceil(ew * 2.6), sc = S.img.naturalWidth / c.canvas.width;
   const dx = Math.round(ex - ps / 2), dy = Math.round(ey - ps / 2);
   // regard : le contenu de l'œil est décalé à l'intérieur d'un masque adouci
   if (Math.abs(gx) + Math.abs(gy) > .4){
-    eyePatchBegin(ps);
+    eyePatchBegin(ps, side * 2);
     if (E.sclera){          // dessins : blanc de l'œil + iris seul déplacé (pas de contour fantôme)
       EC.fillStyle = E.sclera; EC.fillRect(0, 0, ps, ps);
       EC.save(); EC.beginPath(); EC.arc(ps / 2 + gx, ps / 2 + gy, E.ir * ew, 0, Math.PI * 2); EC.clip();
@@ -467,7 +586,7 @@ function drawEye(c, ex, ey, ew, gx, gy, lid){
   // paupière : peau prélevée sous l'œil, qui descend sur l'ouverture
   if (lid > .03){
     const edge = ey - eh * 1.1 + lid * eh * 2.4;
-    eyePatchBegin(ps);
+    eyePatchBegin(ps, side * 2 + 1);
     if (E.lfill){ EC.fillStyle = E.lfill; EC.fillRect(0, 0, ps, ps); }       // aplat (dessins)
     else EC.drawImage(S.img, dx * sc, (dy + eh * (E.lo || 4.4)) * sc, ps * sc, ps * sc, 0, 0, ps, ps);
     eyeMask(ps, ew * (E.lr || .55), eh * (E.lm || 1.5), E.lf);
@@ -486,8 +605,8 @@ function drawEyes(c, W, H, g){
   const lid = Math.min(1, (1 - S.eye) * 1.05), q = 1 - (g ? g.p : 0);
   const unit = ew * (e.ga || .1);
   const gx = S.gx * unit * q, gy = S.gy * eh * .2 * q;
-  drawEye(c, e.lx * W, e.ly * H, ew, gx + (g ? g.gzL * unit * 1.7 : 0), gy, Math.max(lid, g ? g.lidL : 0));
-  drawEye(c, e.rx * W, e.ry * H, ew, gx + (g ? g.gzR * unit * 1.7 : 0), gy, Math.max(lid, g ? g.lidR : 0));
+  drawEye(c, e.lx * W, e.ly * H, ew, gx + (g ? g.gzL * unit * 1.7 : 0), gy, Math.max(lid, g ? g.lidL : 0), 0);
+  drawEye(c, e.rx * W, e.ry * H, ew, gx + (g ? g.gzR * unit * 1.7 : 0), gy, Math.max(lid, g ? g.lidR : 0), 1);
 }
 
 function drawEyeGuides(c, W, H){
@@ -513,7 +632,7 @@ const GR = {
 };
 function setGrimace(name){
   const G = S.gr;
-  if (!name){ G.cur = null; return; }
+  if (!name || !G.fun){ G.cur = null; return; }
   G.cur = G.last = name; G.until = S.t + 2.6;
 }
 function grimState(){
@@ -1147,7 +1266,7 @@ function renderStudio(){
   if (out){ ensureScene(S.st.scene, S.st.tod); drawOutBack(c, S.st.scene, S.st.tod, t); }
   else { drawStudioBack(c, th, t); drawScreens(c, th, t); }
   renderAvatar(actx, AVC.width, AVC.height);
-  const cut = S.mode === 'image' && !!S.cut;
+  const cut = S.mode === 'avatar' || (S.mode === 'image' && !!S.cut);
   if (out && cut && TOD[S.st.tod].av){            // lumière ambiante sur l'avatar détouré
     actx.save(); actx.globalCompositeOperation = 'source-atop'; actx.fillStyle = TOD[S.st.tod].av; actx.fillRect(0, 0, AVC.width, AVC.height); actx.restore();
   }
@@ -1200,7 +1319,7 @@ function frame(now){
     S.gazeT = 1 + Math.random() * 2.6;
     const talk = S.audioOn || (S.speaking && S.active);
     if (Math.random() < (talk ? .5 : .3)){ S.gtx = 0; S.gty = 0; }
-    else { S.gtx = (Math.random() * 2 - 1) * (talk ? .6 : 1); S.gty = (Math.random() * 2 - 1) * .6; }
+    else { S.gtx = (Math.random() * 2 - 1) * (talk ? .35 : .6); S.gty = (Math.random() * 2 - 1) * .3; }
   }
   const kg = 1 - Math.exp(-dt * 14);
   S.gx += (S.gtx - S.gx) * kg; S.gy += (S.gty - S.gy) * kg;
@@ -1227,6 +1346,7 @@ function frame(now){
     tO = v[0] > .1 ? Math.min(1, v[0] * (.86 + .28 * h)) : v[0];
     tW = v[1];
   }
+  tO = Math.min(tO, .85); tW = 1 + (tW - 1) * .6;       // bouche naturelle, sans exagération
   const k = 1 - Math.exp(-dt * 30);
   S.open  += (tO - S.open)  * k;
   S.width += (tW - S.width) * k;
@@ -1272,55 +1392,18 @@ function loadFile(file){
 
 function useDefault(){
   setAvSize(640, 640);
-  S.img = null; S.cut = null; S.avName = ''; S.frame = null; setMode('avatar'); setStatus('Avatar dessiné.');
+  S.img = null; S.cut = null; S.avName = ''; S.frame = null; S.look = 'simple'; setMode('avatar'); setStatus('Avatar dessiné.');
 }
 
 /* avatars dessinés intégrés (SVG) : positions de la bouche et des yeux propres à chacun */
 const CARTOON_PAL = { inner: '#5a1620', teeth: '#ffffff', tongue: '#e8707a', line: 'rgba(42,26,23,.9)' };
 const ROBO_PAL = { inner: '#04101f', teeth: '#e8f6ff', tongue: '#0b5f8f', line: 'rgba(232,246,255,.55)' };
 const EYE_CARTOON = { on: true, sclera: '#ffffff', ir: .27, ar: .41, gm: .45, gf: .9, gv: .9, ga: .15, lr: .66, lm: 1.45, lf: .8, lc: '#2a1a17', lw: .07 };
-const AVATARS = {
-  karim: { name: 'Karim', src: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MDAiIGhlaWdodD0iODAwIiB2aWV3Qm94PSIwIDAgODAwIDgwMCI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImJnIiB4MT0iMCIgeTE9IjAiIHgyPSIwIiB5Mj0iMSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCIgc3RvcC1jb2xvcj0iIzhlYzVmZiIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iI2I5YTdmZiIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICA8L2RlZnM+CiAgPHJlY3Qgd2lkdGg9IjgwMCIgaGVpZ2h0PSI4MDAiIGZpbGw9InVybCgjYmcpIi8+CiAgPGNpcmNsZSBjeD0iMTIwIiBjeT0iMTUwIiByPSI5MCIgZmlsbD0iI2ZmZiIgb3BhY2l0eT0iLjE0Ii8+CiAgPGNpcmNsZSBjeD0iNzAwIiBjeT0iNjIwIiByPSIxNDAiIGZpbGw9IiNmZmYiIG9wYWNpdHk9Ii4xMiIvPgogIDxjaXJjbGUgY3g9IjY2MCIgY3k9IjEzMCIgcj0iNDAiIGZpbGw9IiNmZmYiIG9wYWNpdHk9Ii4xNiIvPgogIDxnIHN0cm9rZT0iIzJhMWExNyIgc3Ryb2tlLXdpZHRoPSI2IiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2UtbGluZWNhcD0icm91bmQiPgogICAgPCEtLSBzd2VhdCDDoCBjYXB1Y2hlIC0tPgogICAgPHBhdGggZD0iTTgwIDgwMCBDOTAgNjYwIDIwNSA2MDAgMzIwIDU4NSBMNDgwIDU4NSBDNTk1IDYwMCA3MTAgNjYwIDcyMCA4MDAgWiIgZmlsbD0iI2ZmOGEzZCIvPgogICAgPHBhdGggZD0iTTMwMCA1ODUgQzMzMCA2NDAgNDcwIDY0MCA1MDAgNTg1IEM0NzAgNTYwIDMzMCA1NjAgMzAwIDU4NSBaIiBmaWxsPSIjZTU3MDJhIi8+CiAgICA8IS0tIGNvdSAtLT4KICAgIDxwYXRoIGQ9Ik0zNTAgNTAwIEwzNTAgNTkwIEMzODAgNjE4IDQyMCA2MTggNDUwIDU5MCBMNDUwIDUwMCBaIiBmaWxsPSIjZDc5YTcwIi8+CiAgICA8cGF0aCBkPSJNMzAwIDU4NSBDMzQwIDY1MCA0NjAgNjUwIDUwMCA1ODUgQzQ4MCA2MDAgMzIwIDYwMCAzMDAgNTg1IFoiIGZpbGw9IiNlNTcwMmEiLz4KICAgIDxwYXRoIGQ9Ik0zNjIgNjI4IEwzNTYgNzA1IE00MzggNjI4IEw0NDQgNzA1IiBmaWxsPSJub25lIi8+CiAgICA8Y2lyY2xlIGN4PSIzNTYiIGN5PSI3MTIiIHI9IjkiIGZpbGw9IiNmZmYiLz4KICAgIDxjaXJjbGUgY3g9IjQ0NCIgY3k9IjcxMiIgcj0iOSIgZmlsbD0iI2ZmZiIvPgogICAgPCEtLSBvcmVpbGxlcyAtLT4KICAgIDxlbGxpcHNlIGN4PSIyMzYiIGN5PSI0MTAiIHJ4PSIyNiIgcnk9IjQwIiBmaWxsPSIjZThhZTgzIi8+CiAgICA8ZWxsaXBzZSBjeD0iNTY0IiBjeT0iNDEwIiByeD0iMjYiIHJ5PSI0MCIgZmlsbD0iI2U4YWU4MyIvPgogICAgPHBhdGggZD0iTTIzMiAzOTYgQzIyNiA0MTAgMjMwIDQyNCAyMzggNDMwIiBmaWxsPSJub25lIiBzdHJva2Utd2lkdGg9IjQiLz4KICAgIDxwYXRoIGQ9Ik01NjggMzk2IEM1NzQgNDEwIDU3MCA0MjQgNTYyIDQzMCIgZmlsbD0ibm9uZSIgc3Ryb2tlLXdpZHRoPSI0Ii8+CiAgICA8IS0tIHTDqnRlIC0tPgogICAgPHBhdGggZD0iTTI0MCAzODAgQzI0MCAyNzAgMzEwIDIwNSA0MDAgMjA1IEM0OTAgMjA1IDU2MCAyNzAgNTYwIDM4MCBDNTYwIDQ3MCA1MDAgNTYwIDQwMCA1NjAgQzMwMCA1NjAgMjQwIDQ3MCAyNDAgMzgwIFoiIGZpbGw9IiNmMGJiOTEiLz4KICAgIDwhLS0gY2hldmV1eCAtLT4KICAgIDxwYXRoIGQ9Ik0yMzIgMzcyIEMyMDUgMjUwIDI3MCAxNDAgNDAwIDEzNiBDNTMwIDE0MCA2MDAgMjUwIDU2OCAzNzIgQzU1NiAzMjIgNTM1IDI4NSA0OTUgMjY4IEM0NTAgMzAwIDM0MCAzMDAgMzAwIDI2NSBDMjYyIDI4NSAyNDIgMzI1IDIzMiAzNzIgWiIgZmlsbD0iIzFmMWExYSIvPgogICAgPHBhdGggZD0iTTMwMCAxNzggQzMzMCAxMDAgNDQwIDgwIDUyMCAxMzAgQzQ4MCAxMjUgNDUwIDE0MCA0NDAgMTY1IEM0MDAgMTQ1IDM0MCAxNTAgMzAwIDE3OCBaIiBmaWxsPSIjMWYxYTFhIi8+CiAgICA8cGF0aCBkPSJNMzE4IDE5MCBDMzU4IDE2MCA0MjAgMTUyIDQ3MCAxNzYiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzZiNWE1YSIgc3Ryb2tlLXdpZHRoPSI1IiBvcGFjaXR5PSIuNiIvPgogICAgPCEtLSBzb3VyY2lscyAtLT4KICAgIDxwYXRoIGQ9Ik0yODUgMzA2IFEzMzUgMjgwIDM4NSAzMDEiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzFmMWExYSIgc3Ryb2tlLXdpZHRoPSIxMyIvPgogICAgPHBhdGggZD0iTTQxNSAzMDEgUTQ2NSAyODAgNTE1IDMwNiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMWYxYTFhIiBzdHJva2Utd2lkdGg9IjEzIi8+CiAgICA8IS0tIHlldXggLS0+CiAgICA8ZWxsaXBzZSBjeD0iMzM1IiBjeT0iMzU1IiByeD0iMzgiIHJ5PSIzMSIgZmlsbD0iI2ZmZiIvPgogICAgPGVsbGlwc2UgY3g9IjQ2NSIgY3k9IjM1NSIgcng9IjM4IiByeT0iMzEiIGZpbGw9IiNmZmYiLz4KICAgIDxjaXJjbGUgY3g9IjMzNSIgY3k9IjM1NyIgcj0iMTkiIGZpbGw9IiM0YTJmMWQiIHN0cm9rZT0ibm9uZSIvPgogICAgPGNpcmNsZSBjeD0iNDY1IiBjeT0iMzU3IiByPSIxOSIgZmlsbD0iIzRhMmYxZCIgc3Ryb2tlPSJub25lIi8+CiAgICA8Y2lyY2xlIGN4PSIzMzUiIGN5PSIzNTciIHI9IjkiIGZpbGw9IiMxMjBiMDgiIHN0cm9rZT0ibm9uZSIvPgogICAgPGNpcmNsZSBjeD0iNDY1IiBjeT0iMzU3IiByPSI5IiBmaWxsPSIjMTIwYjA4IiBzdHJva2U9Im5vbmUiLz4KICAgIDxjaXJjbGUgY3g9IjM0MiIgY3k9IjM0OSIgcj0iNiIgZmlsbD0iI2ZmZiIgc3Ryb2tlPSJub25lIi8+CiAgICA8Y2lyY2xlIGN4PSI0NzIiIGN5PSIzNDkiIHI9IjYiIGZpbGw9IiNmZmYiIHN0cm9rZT0ibm9uZSIvPgogICAgPCEtLSBuZXogLS0+CiAgICA8cGF0aCBkPSJNNDAwIDQwMiBDMzg4IDQyNiAzOTIgNDQyIDQxMCA0NDIiIGZpbGw9Im5vbmUiIHN0cm9rZS13aWR0aD0iNSIvPgogIDwvZz4KPC9zdmc+Cg==',
-    mouth: { x: .5, y: .61, size: .17, color: '#4a2a22' },
-    eyes: Object.assign({}, EYE_CARTOON, { lx: .41875, ly: .44375, rx: .58125, ry: .44375, size: .095, lfill: '#f0bb91' }) },
-  yasmine: { name: 'Yasmine', src: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MDAiIGhlaWdodD0iODAwIiB2aWV3Qm94PSIwIDAgODAwIDgwMCI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImJnIiB4MT0iMCIgeTE9IjAiIHgyPSIwIiB5Mj0iMSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCIgc3RvcC1jb2xvcj0iI2ZmZThjMiIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iI2ZmYzBhOCIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICA8L2RlZnM+CiAgPHJlY3Qgd2lkdGg9IjgwMCIgaGVpZ2h0PSI4MDAiIGZpbGw9InVybCgjYmcpIi8+CiAgPGNpcmNsZSBjeD0iMTMwIiBjeT0iNjQwIiByPSIxMjAiIGZpbGw9IiNmZmYiIG9wYWNpdHk9Ii4xOCIvPgogIDxjaXJjbGUgY3g9IjY5MCIgY3k9IjE1MCIgcj0iODAiIGZpbGw9IiNmZmYiIG9wYWNpdHk9Ii4yIi8+CiAgPGNpcmNsZSBjeD0iNjIwIiBjeT0iNzAwIiByPSIzNCIgZmlsbD0iI2ZmZiIgb3BhY2l0eT0iLjIiLz4KICA8ZyBzdHJva2U9IiMyYTFhMTciIHN0cm9rZS13aWR0aD0iNiIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIj4KICAgIDwhLS0gY2FyZGlnYW4gLS0+CiAgICA8cGF0aCBkPSJNNTAgODAwIEM3MCA2OTAgMTkwIDYyNSAzMDAgNjA1IEw1MDAgNjA1IEM2MTAgNjI1IDczMCA2OTAgNzUwIDgwMCBaIiBmaWxsPSIjZjJiMTM0Ii8+CiAgICA8IS0tIHZvaWxlIDogdMOqdGUgZXQgw6lwYXVsZXMgLS0+CiAgICA8cGF0aCBkPSJNMjA1IDQzMCBDMTgwIDI1MCAyNjUgMTQ4IDQwMCAxNDYgQzUzNSAxNDggNjIwIDI1MCA1OTUgNDMwIEM1OTYgNTIwIDU3NSA1ODAgNTM1IDYxMiBDNjAwIDY1MCA2NDAgNzIwIDY1MCA4MDAgTDE1MCA4MDAgQzE2MCA3MjAgMjAwIDY1MCAyNjUgNjEyIEMyMjUgNTgwIDIwNCA1MjAgMjA1IDQzMCBaIiBmaWxsPSIjMmE5ZDhmIi8+CiAgICA8cGF0aCBkPSJNMzMwIDY0MCBDMzQwIDcwNSAzMzIgNzYwIDMyMiA4MDAgTTQ3MCA2NDAgQzQ2MCA3MDUgNDY4IDc2MCA0NzggODAwIE00MDAgNjU1IEM0MDIgNzEwIDQwMCA3NjAgNDAwIDgwMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTc3MDZmIiBzdHJva2Utd2lkdGg9IjUiLz4KICAgIDwhLS0gdmlzYWdlIC0tPgogICAgPHBhdGggZD0iTTI2MiAzODUgQzI2MiAyODUgMzI1IDI0MCA0MDAgMjQwIEM0NzUgMjQwIDUzOCAyODUgNTM4IDM4NSBDNTM4IDQ3NSA0OTAgNTU1IDQwMCA1NTUgQzMxMCA1NTUgMjYyIDQ3NSAyNjIgMzg1IFoiIGZpbGw9IiNmNGM3YTMiLz4KICAgIDwhLS0gYmFuZGVhdSBkdSB2b2lsZSBzdXIgbGUgZnJvbnQgLS0+CiAgICA8cGF0aCBkPSJNMjUyIDM0MCBDMjQ2IDI1NSAzMjAgMjEyIDQwMCAyMTIgQzQ4MCAyMTIgNTU0IDI1NSA1NDggMzQwIEM1MjggMjg4IDQ3MCAyNjIgNDAwIDI2MiBDMzMwIDI2MiAyNzIgMjg4IDI1MiAzNDAgWiIgZmlsbD0iIzJhOWQ4ZiIvPgogICAgPCEtLSBzb3VyY2lscyAtLT4KICAgIDxwYXRoIGQ9Ik0yOTUgMzI0IFEzMzggMzA0IDM3OCAzMjAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzNhMmEyMiIgc3Ryb2tlLXdpZHRoPSI5Ii8+CiAgICA8cGF0aCBkPSJNNDIyIDMyMCBRNDYyIDMwNCA1MDUgMzI0IiBmaWxsPSJub25lIiBzdHJva2U9IiMzYTJhMjIiIHN0cm9rZS13aWR0aD0iOSIvPgogICAgPCEtLSB5ZXV4IC0tPgogICAgPGVsbGlwc2UgY3g9IjMzOCIgY3k9IjM2OCIgcng9IjM2IiByeT0iMjkiIGZpbGw9IiNmZmYiLz4KICAgIDxlbGxpcHNlIGN4PSI0NjIiIGN5PSIzNjgiIHJ4PSIzNiIgcnk9IjI5IiBmaWxsPSIjZmZmIi8+CiAgICA8Y2lyY2xlIGN4PSIzMzgiIGN5PSIzNzAiIHI9IjE4IiBmaWxsPSIjM2IyYTIwIiBzdHJva2U9Im5vbmUiLz4KICAgIDxjaXJjbGUgY3g9IjQ2MiIgY3k9IjM3MCIgcj0iMTgiIGZpbGw9IiMzYjJhMjAiIHN0cm9rZT0ibm9uZSIvPgogICAgPGNpcmNsZSBjeD0iMzM4IiBjeT0iMzcwIiByPSI4LjUiIGZpbGw9IiMwZjA4MDYiIHN0cm9rZT0ibm9uZSIvPgogICAgPGNpcmNsZSBjeD0iNDYyIiBjeT0iMzcwIiByPSI4LjUiIGZpbGw9IiMwZjA4MDYiIHN0cm9rZT0ibm9uZSIvPgogICAgPGNpcmNsZSBjeD0iMzQ1IiBjeT0iMzYyIiByPSI2IiBmaWxsPSIjZmZmIiBzdHJva2U9Im5vbmUiLz4KICAgIDxjaXJjbGUgY3g9IjQ2OSIgY3k9IjM2MiIgcj0iNiIgZmlsbD0iI2ZmZiIgc3Ryb2tlPSJub25lIi8+CiAgICA8IS0tIGNpbHMgLS0+CiAgICA8cGF0aCBkPSJNMzAyIDM1MiBRMjkyIDM0OCAyODYgMzM4IE0zMTAgMzQyIFEzMDQgMzMyIDMwNCAzMjIiIGZpbGw9Im5vbmUiIHN0cm9rZS13aWR0aD0iNSIvPgogICAgPHBhdGggZD0iTTQ5OCAzNTIgUTUwOCAzNDggNTE0IDMzOCBNNDkwIDM0MiBRNDk2IDMzMiA0OTYgMzIyIiBmaWxsPSJub25lIiBzdHJva2Utd2lkdGg9IjUiLz4KICAgIDwhLS0gbmV6IC0tPgogICAgPHBhdGggZD0iTTQwMCA0MTQgQzM5MiA0MzIgMzk0IDQ0MiA0MDQgNDQ0IEM0MTAgNDQ1IDQxNCA0NDIgNDE2IDQzOCIgZmlsbD0ibm9uZSIgc3Ryb2tlLXdpZHRoPSI1Ii8+CiAgICA8IS0tIGpvdWVzIC0tPgogICAgPGVsbGlwc2UgY3g9IjI4OCIgY3k9IjQ3MCIgcng9IjE4IiByeT0iMTIiIGZpbGw9IiNmZjhmOWEiIG9wYWNpdHk9Ii41IiBzdHJva2U9Im5vbmUiLz4KICAgIDxlbGxpcHNlIGN4PSI1MTIiIGN5PSI0NzAiIHJ4PSIxOCIgcnk9IjEyIiBmaWxsPSIjZmY4ZjlhIiBvcGFjaXR5PSIuNSIgc3Ryb2tlPSJub25lIi8+CiAgPC9nPgo8L3N2Zz4K',
-    mouth: { x: .5, y: .6225, size: .15, color: '#b23a55' },
-    eyes: Object.assign({}, EYE_CARTOON, { lx: .4225, ly: .46, rx: .5775, ry: .46, size: .09, ar: .4, lfill: '#f4c7a3' }) },
-  fennec: { name: 'Fennec', src: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MDAiIGhlaWdodD0iODAwIiB2aWV3Qm94PSIwIDAgODAwIDgwMCI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImJnIiB4MT0iMCIgeTE9IjAiIHgyPSIwIiB5Mj0iMSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCIgc3RvcC1jb2xvcj0iIzdmZDBmMiIvPjxzdG9wIG9mZnNldD0iLjYyIiBzdG9wLWNvbG9yPSIjZmZlMGEzIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjZjZhOTZiIi8+CiAgICA8L2xpbmVhckdyYWRpZW50PgogIDwvZGVmcz4KICA8cmVjdCB3aWR0aD0iODAwIiBoZWlnaHQ9IjgwMCIgZmlsbD0idXJsKCNiZykiLz4KICA8Y2lyY2xlIGN4PSI2NjAiIGN5PSIxNTAiIHI9IjcwIiBmaWxsPSIjZmZmNmQ2IiBvcGFjaXR5PSIuOSIvPgogIDxwYXRoIGQ9Ik0wIDY5MCBDMTQwIDY0MCAyNjAgNzAwIDQwMCA2NzAgQzU0MCA2NDAgNjYwIDcwMCA4MDAgNjYwIEw4MDAgODAwIEwwIDgwMCBaIiBmaWxsPSIjZTg5MzRmIi8+CiAgPHBhdGggZD0iTTAgNzQwIEMxNjAgNzEwIDMwMCA3NzAgNDYwIDczNSBDNjAwIDcwNSA3MDAgNzYwIDgwMCA3MzUgTDgwMCA4MDAgTDAgODAwIFoiIGZpbGw9IiNkOTdkM2QiLz4KICA8ZyBzdHJva2U9IiMyYTFhMTciIHN0cm9rZS13aWR0aD0iNiIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIj4KICAgIDwhLS0gb3JlaWxsZXMgLS0+CiAgICA8cGF0aCBkPSJNMjE1IDMzMCBDMTUwIDIwMCAxNjAgNzAgMjE1IDIwIEMyNzUgODAgMzMwIDE2MCAzNDUgMjUwIFoiIGZpbGw9IiNmMmI3NmYiLz4KICAgIDxwYXRoIGQ9Ik0yMjIgMjcyIEMxODUgMTkyIDE5MCAxMTIgMjE1IDgyIEMyNTAgMTI3IDI4NSAxNzcgMzAwIDI0MiBaIiBmaWxsPSIjZjZjMWI4IiBzdHJva2Utd2lkdGg9IjQiLz4KICAgIDxwYXRoIGQ9Ik01ODUgMzMwIEM2NTAgMjAwIDY0MCA3MCA1ODUgMjAgQzUyNSA4MCA0NzAgMTYwIDQ1NSAyNTAgWiIgZmlsbD0iI2YyYjc2ZiIvPgogICAgPHBhdGggZD0iTTU3OCAyNzIgQzYxNSAxOTIgNjEwIDExMiA1ODUgODIgQzU1MCAxMjcgNTE1IDE3NyA1MDAgMjQyIFoiIGZpbGw9IiNmNmMxYjgiIHN0cm9rZS13aWR0aD0iNCIvPgogICAgPCEtLSDDqWNoYXJwZSArIHRvcnNlIC0tPgogICAgPHBhdGggZD0iTTIzMCA4MDAgQzI0NSA3MDAgMzIwIDYyNSA0MDAgNjE1IEM0ODAgNjI1IDU1NSA3MDAgNTcwIDgwMCBaIiBmaWxsPSIjZmZmMWQ2Ii8+CiAgICA8cGF0aCBkPSJNMjg1IDU5MCBDMzQwIDY1MCA0NjAgNjUwIDUxNSA1OTAgTDUzNSA2NTUgQzQ2MCA3MDUgMzQwIDcwNSAyNjUgNjU1IFoiIGZpbGw9IiNkOTRmNGYiLz4KICAgIDxwYXRoIGQ9Ik00NDAgNjkwIEw0NjIgNzcwIEw1MDAgNzU4IEw0ODAgNjg2IiBmaWxsPSIjZDk0ZjRmIi8+CiAgICA8IS0tIHBvaW50ZXMgZGUgam91ZXMgLS0+CiAgICA8cGF0aCBkPSJNMTY4IDQyNSBMMTEyIDQ1OCBMMTc4IDQ3OCBaIiBmaWxsPSIjZjJiNzZmIi8+CiAgICA8cGF0aCBkPSJNNjMyIDQyNSBMNjg4IDQ1OCBMNjIyIDQ3OCBaIiBmaWxsPSIjZjJiNzZmIi8+CiAgICA8IS0tIHTDqnRlIC0tPgogICAgPHBhdGggZD0iTTE2NSA0MTAgQzE2NSAyODAgMjY1IDIxNSA0MDAgMjE1IEM1MzUgMjE1IDYzNSAyODAgNjM1IDQxMCBDNjM1IDUyNSA1NDUgNTk1IDQwMCA1OTUgQzI1NSA1OTUgMTY1IDUyNSAxNjUgNDEwIFoiIGZpbGw9IiNmMmI3NmYiLz4KICAgIDwhLS0gbWFzcXVlIGNyw6htZSAtLT4KICAgIDxwYXRoIGQ9Ik0yMzIgNDcyIEMyNjIgNDQ3IDMzMCA0NTIgNDAwIDQ4MiBDNDcwIDQ1MiA1MzggNDQ3IDU2OCA0NzIgQzU5MiA1NDAgNTIwIDU4OCA0MDAgNTkyIEMyODAgNTg4IDIwOCA1NDAgMjMyIDQ3MiBaIiBmaWxsPSIjZmZmMWQ2IiBzdHJva2Utd2lkdGg9IjQiLz4KICAgIDwhLS0gc291cmNpbHMgLS0+CiAgICA8cGF0aCBkPSJNMjg1IDI4MiBRMzIwIDI2NiAzNTUgMjgwIiBmaWxsPSJub25lIiBzdHJva2U9IiM4YTRiMmEiIHN0cm9rZS13aWR0aD0iOSIvPgogICAgPHBhdGggZD0iTTQ0NSAyODAgUTQ4MCAyNjYgNTE1IDI4MiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjOGE0YjJhIiBzdHJva2Utd2lkdGg9IjkiLz4KICAgIDwhLS0geWV1eCAtLT4KICAgIDxlbGxpcHNlIGN4PSIzMjAiIGN5PSIzMzUiIHJ4PSIzNyIgcnk9IjMyIiBmaWxsPSIjZmZmIi8+CiAgICA8ZWxsaXBzZSBjeD0iNDgwIiBjeT0iMzM1IiByeD0iMzciIHJ5PSIzMiIgZmlsbD0iI2ZmZiIvPgogICAgPGNpcmNsZSBjeD0iMzIwIiBjeT0iMzM3IiByPSIyMyIgZmlsbD0iIzNhMjMxNCIgc3Ryb2tlPSJub25lIi8+CiAgICA8Y2lyY2xlIGN4PSI0ODAiIGN5PSIzMzciIHI9IjIzIiBmaWxsPSIjM2EyMzE0IiBzdHJva2U9Im5vbmUiLz4KICAgIDxjaXJjbGUgY3g9IjMyMCIgY3k9IjMzNyIgcj0iMTIiIGZpbGw9IiMwZjA4MDYiIHN0cm9rZT0ibm9uZSIvPgogICAgPGNpcmNsZSBjeD0iNDgwIiBjeT0iMzM3IiByPSIxMiIgZmlsbD0iIzBmMDgwNiIgc3Ryb2tlPSJub25lIi8+CiAgICA8Y2lyY2xlIGN4PSIzMjkiIGN5PSIzMjYiIHI9IjgiIGZpbGw9IiNmZmYiIHN0cm9rZT0ibm9uZSIvPgogICAgPGNpcmNsZSBjeD0iNDg5IiBjeT0iMzI2IiByPSI4IiBmaWxsPSIjZmZmIiBzdHJva2U9Im5vbmUiLz4KICAgIDwhLS0gbmV6IC0tPgogICAgPHBhdGggZD0iTTM3NCA0NDYgUTQwMCA0MzYgNDI2IDQ0NiBRNDE2IDQ3MiA0MDAgNDc4IFEzODQgNDcyIDM3NCA0NDYgWiIgZmlsbD0iIzJhMWExNyIvPgogICAgPHBhdGggZD0iTTQwMCA0NzggTDQwMCA0OTQiIGZpbGw9Im5vbmUiIHN0cm9rZS13aWR0aD0iNSIvPgogIDwvZz4KPC9zdmc+Cg==',
-    mouth: { x: .5, y: .65, size: .17, color: '#4a2a22' },
-    eyes: Object.assign({}, EYE_CARTOON, { lx: .4, ly: .41875, rx: .6, ry: .41875, size: .0925, ar: .43, ir: .33, ga: .1, lfill: '#f2b76f' }) },
-  lina: { name: 'Lina', src: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MDAiIGhlaWdodD0iODAwIiB2aWV3Qm94PSIwIDAgODAwIDgwMCI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImJnIiB4MT0iMCIgeTE9IjAiIHgyPSIwIiB5Mj0iMSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCIgc3RvcC1jb2xvcj0iI2ZmZDFlYyIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iI2M0YjVmZCIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICA8L2RlZnM+CiAgPHJlY3Qgd2lkdGg9IjgwMCIgaGVpZ2h0PSI4MDAiIGZpbGw9InVybCgjYmcpIi8+CiAgPGNpcmNsZSBjeD0iMTEwIiBjeT0iMTMwIiByPSI4MCIgZmlsbD0iI2ZmZiIgb3BhY2l0eT0iLjIiLz4KICA8Y2lyY2xlIGN4PSI3MDAiIGN5PSI2NjAiIHI9IjEzMCIgZmlsbD0iI2ZmZiIgb3BhY2l0eT0iLjE2Ii8+CiAgPGNpcmNsZSBjeD0iNjgwIiBjeT0iMTIwIiByPSIzNiIgZmlsbD0iI2ZmZiIgb3BhY2l0eT0iLjIyIi8+CiAgPGcgc3Ryb2tlPSIjMmExYTE3IiBzdHJva2Utd2lkdGg9IjYiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCI+CiAgICA8IS0tIGhhdXQgLS0+CiAgICA8cGF0aCBkPSJNNjAgODAwIEM4MCA2OTAgMjAwIDYyNSAzMTAgNjEwIEw0OTAgNjEwIEM2MDAgNjI1IDcyMCA2OTAgNzQwIDgwMCBaIiBmaWxsPSIjOGU1YmQ4Ii8+CiAgICA8cGF0aCBkPSJNMzUwIDUyMCBMMzUwIDYyMCBDMzgwIDY1MCA0MjAgNjUwIDQ1MCA2MjAgTDQ1MCA1MjAgWiIgZmlsbD0iI2I4Nzg1MCIvPgogICAgPHBhdGggZD0iTTMzNSA2MTIgTDQwMCA3MDAgTDQ2NSA2MTIgWiIgZmlsbD0iI2I4Nzg1MCIvPgogICAgPCEtLSBjaGV2ZWx1cmUgKGNvbnRvdXIgcHVpcyByZW1wbGlzc2FnZSBwb3VyIGZ1c2lvbm5lciBsZXMgYm91Y2xlcykgLS0+CiAgICA8ZyBmaWxsPSIjNGEyYzFhIiBzdHJva2U9IiMyYTFhMTciIHN0cm9rZS13aWR0aD0iMTIiPgogICAgICA8Y2lyY2xlIGN4PSIyMTUiIGN5PSIzMzAiIHI9IjYyIi8+PGNpcmNsZSBjeD0iMjAwIiBjeT0iNDMwIiByPSI2MCIvPjxjaXJjbGUgY3g9IjIyOCIgY3k9IjUyMCIgcj0iNTUiLz48Y2lyY2xlIGN4PSIyNDUiIGN5PSI1OTUiIHI9IjQ2Ii8+CiAgICAgIDxjaXJjbGUgY3g9IjU4NSIgY3k9IjMzMCIgcj0iNjIiLz48Y2lyY2xlIGN4PSI2MDAiIGN5PSI0MzAiIHI9IjYwIi8+PGNpcmNsZSBjeD0iNTcyIiBjeT0iNTIwIiByPSI1NSIvPjxjaXJjbGUgY3g9IjU1NSIgY3k9IjU5NSIgcj0iNDYiLz4KICAgICAgPGNpcmNsZSBjeD0iMjkwIiBjeT0iMjE1IiByPSI3MCIvPjxjaXJjbGUgY3g9IjQwMCIgY3k9IjE4NSIgcj0iODAiLz48Y2lyY2xlIGN4PSI1MTAiIGN5PSIyMTUiIHI9IjcwIi8+CiAgICAgIDxjaXJjbGUgY3g9IjIzNSIgY3k9IjI2MCIgcj0iNTgiLz48Y2lyY2xlIGN4PSI1NjUiIGN5PSIyNjAiIHI9IjU4Ii8+CiAgICA8L2c+CiAgICA8ZyBmaWxsPSIjNGEyYzFhIiBzdHJva2U9Im5vbmUiPgogICAgICA8Y2lyY2xlIGN4PSIyMTUiIGN5PSIzMzAiIHI9IjYyIi8+PGNpcmNsZSBjeD0iMjAwIiBjeT0iNDMwIiByPSI2MCIvPjxjaXJjbGUgY3g9IjIyOCIgY3k9IjUyMCIgcj0iNTUiLz48Y2lyY2xlIGN4PSIyNDUiIGN5PSI1OTUiIHI9IjQ2Ii8+CiAgICAgIDxjaXJjbGUgY3g9IjU4NSIgY3k9IjMzMCIgcj0iNjIiLz48Y2lyY2xlIGN4PSI2MDAiIGN5PSI0MzAiIHI9IjYwIi8+PGNpcmNsZSBjeD0iNTcyIiBjeT0iNTIwIiByPSI1NSIvPjxjaXJjbGUgY3g9IjU1NSIgY3k9IjU5NSIgcj0iNDYiLz4KICAgICAgPGNpcmNsZSBjeD0iMjkwIiBjeT0iMjE1IiByPSI3MCIvPjxjaXJjbGUgY3g9IjQwMCIgY3k9IjE4NSIgcj0iODAiLz48Y2lyY2xlIGN4PSI1MTAiIGN5PSIyMTUiIHI9IjcwIi8+CiAgICAgIDxjaXJjbGUgY3g9IjIzNSIgY3k9IjI2MCIgcj0iNTgiLz48Y2lyY2xlIGN4PSI1NjUiIGN5PSIyNjAiIHI9IjU4Ii8+CiAgICA8L2c+CiAgICA8IS0tIHZpc2FnZSAtLT4KICAgIDxwYXRoIGQ9Ik0yNjIgMzg1IEMyNjIgMjg1IDMyNSAyNDAgNDAwIDI0MCBDNDc1IDI0MCA1MzggMjg1IDUzOCAzODUgQzUzOCA0NzUgNDkwIDU1NSA0MDAgNTU1IEMzMTAgNTU1IDI2MiA0NzUgMjYyIDM4NSBaIiBmaWxsPSIjYzk4ZjY3Ii8+CiAgICA8IS0tIGZyYW5nZSBib3VjbMOpZSAtLT4KICAgIDxnIGZpbGw9IiM0YTJjMWEiIHN0cm9rZT0iIzJhMWExNyIgc3Ryb2tlLXdpZHRoPSIxMiI+CiAgICAgIDxjaXJjbGUgY3g9IjMxMiIgY3k9IjI2OCIgcj0iMzYiLz48Y2lyY2xlIGN4PSIzNjIiIGN5PSIyNTQiIHI9IjM2Ii8+PGNpcmNsZSBjeD0iNDEyIiBjeT0iMjUwIiByPSIzNiIvPjxjaXJjbGUgY3g9IjQ2MiIgY3k9IjI1NCIgcj0iMzYiLz48Y2lyY2xlIGN4PSI1MDQiIGN5PSIyNzAiIHI9IjM0Ii8+CiAgICA8L2c+CiAgICA8ZyBmaWxsPSIjNGEyYzFhIiBzdHJva2U9Im5vbmUiPgogICAgICA8Y2lyY2xlIGN4PSIzMTIiIGN5PSIyNjgiIHI9IjM2Ii8+PGNpcmNsZSBjeD0iMzYyIiBjeT0iMjU0IiByPSIzNiIvPjxjaXJjbGUgY3g9IjQxMiIgY3k9IjI1MCIgcj0iMzYiLz48Y2lyY2xlIGN4PSI0NjIiIGN5PSIyNTQiIHI9IjM2Ii8+PGNpcmNsZSBjeD0iNTA0IiBjeT0iMjcwIiByPSIzNCIvPgogICAgPC9nPgogICAgPCEtLSBiYW5kZWF1IC0tPgogICAgPHBhdGggZD0iTTI1MCAzMDAgQzI2MiAxOTYgNTM4IDE5NiA1NTAgMzAwIiBmaWxsPSJub25lIiBzdHJva2U9IiMyYTFhMTciIHN0cm9rZS13aWR0aD0iMzAiLz4KICAgIDxwYXRoIGQ9Ik0yNTAgMzAwIEMyNjIgMTk2IDUzOCAxOTYgNTUwIDMwMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmZjODNkIiBzdHJva2Utd2lkdGg9IjE4Ii8+CiAgICA8IS0tIHNvdXJjaWxzIC0tPgogICAgPHBhdGggZD0iTTI5NSAzMjYgUTMzOCAzMDYgMzc4IDMyMiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjM2EyNDE3IiBzdHJva2Utd2lkdGg9IjkiLz4KICAgIDxwYXRoIGQ9Ik00MjIgMzIyIFE0NjIgMzA2IDUwNSAzMjYiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzNhMjQxNyIgc3Ryb2tlLXdpZHRoPSI5Ii8+CiAgICA8IS0tIHlldXggLS0+CiAgICA8ZWxsaXBzZSBjeD0iMzM4IiBjeT0iMzcwIiByeD0iMzYiIHJ5PSIyOSIgZmlsbD0iI2ZmZiIvPgogICAgPGVsbGlwc2UgY3g9IjQ2MiIgY3k9IjM3MCIgcng9IjM2IiByeT0iMjkiIGZpbGw9IiNmZmYiLz4KICAgIDxjaXJjbGUgY3g9IjMzOCIgY3k9IjM3MiIgcj0iMTkiIGZpbGw9IiMzYTI0MTciIHN0cm9rZT0ibm9uZSIvPgogICAgPGNpcmNsZSBjeD0iNDYyIiBjeT0iMzcyIiByPSIxOSIgZmlsbD0iIzNhMjQxNyIgc3Ryb2tlPSJub25lIi8+CiAgICA8Y2lyY2xlIGN4PSIzMzgiIGN5PSIzNzIiIHI9IjkiIGZpbGw9IiMwZjA4MDYiIHN0cm9rZT0ibm9uZSIvPgogICAgPGNpcmNsZSBjeD0iNDYyIiBjeT0iMzcyIiByPSI5IiBmaWxsPSIjMGYwODA2IiBzdHJva2U9Im5vbmUiLz4KICAgIDxjaXJjbGUgY3g9IjM0NSIgY3k9IjM2NCIgcj0iNiIgZmlsbD0iI2ZmZiIgc3Ryb2tlPSJub25lIi8+CiAgICA8Y2lyY2xlIGN4PSI0NjkiIGN5PSIzNjQiIHI9IjYiIGZpbGw9IiNmZmYiIHN0cm9rZT0ibm9uZSIvPgogICAgPHBhdGggZD0iTTMwMiAzNTQgUTI5MiAzNTAgMjg2IDM0MCBNMzEwIDM0NCBRMzA0IDMzNCAzMDQgMzI0IiBmaWxsPSJub25lIiBzdHJva2Utd2lkdGg9IjUiLz4KICAgIDxwYXRoIGQ9Ik00OTggMzU0IFE1MDggMzUwIDUxNCAzNDAgTTQ5MCAzNDQgUTQ5NiAzMzQgNDk2IDMyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlLXdpZHRoPSI1Ii8+CiAgICA8IS0tIG5leiwgam91ZXMsIHRhY2hlcyBkZSByb3Vzc2V1ciAtLT4KICAgIDxwYXRoIGQ9Ik00MDAgNDE2IEMzOTIgNDM0IDM5NCA0NDQgNDA0IDQ0NiBDNDEwIDQ0NyA0MTQgNDQ0IDQxNiA0NDAiIGZpbGw9Im5vbmUiIHN0cm9rZS13aWR0aD0iNSIvPgogICAgPGVsbGlwc2UgY3g9IjI5MiIgY3k9IjQ2OCIgcng9IjIwIiByeT0iMTMiIGZpbGw9IiNmZjdmOWEiIG9wYWNpdHk9Ii40NSIgc3Ryb2tlPSJub25lIi8+CiAgICA8ZWxsaXBzZSBjeD0iNTA4IiBjeT0iNDY4IiByeD0iMjAiIHJ5PSIxMyIgZmlsbD0iI2ZmN2Y5YSIgb3BhY2l0eT0iLjQ1IiBzdHJva2U9Im5vbmUiLz4KICAgIDxnIGZpbGw9IiM5YTVhM2MiIHN0cm9rZT0ibm9uZSI+CiAgICAgIDxjaXJjbGUgY3g9IjMxOCIgY3k9IjQzOCIgcj0iNCIvPjxjaXJjbGUgY3g9IjMzNiIgY3k9IjQ0NyIgcj0iNCIvPjxjaXJjbGUgY3g9IjM1MiIgY3k9IjQzNiIgcj0iNCIvPgogICAgICA8Y2lyY2xlIGN4PSI0ODIiIGN5PSI0MzgiIHI9IjQiLz48Y2lyY2xlIGN4PSI0NjQiIGN5PSI0NDciIHI9IjQiLz48Y2lyY2xlIGN4PSI0NDgiIGN5PSI0MzYiIHI9IjQiLz4KICAgIDwvZz4KICA8L2c+Cjwvc3ZnPgo=',
-    mouth: { x: .5, y: .6225, size: .15, color: '#a8324f' },
-    eyes: Object.assign({}, EYE_CARTOON, { lx: .4225, ly: .4625, rx: .5775, ry: .4625, size: .09, ar: .4, lfill: '#c98f67' }) },
-  hakim: { name: 'Hakim', src: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MDAiIGhlaWdodD0iODAwIiB2aWV3Qm94PSIwIDAgODAwIDgwMCI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImJnIiB4MT0iMCIgeTE9IjAiIHgyPSIwIiB5Mj0iMSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCIgc3RvcC1jb2xvcj0iI2U2ZWZjMiIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzljY2Y4ZiIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICA8L2RlZnM+CiAgPHJlY3Qgd2lkdGg9IjgwMCIgaGVpZ2h0PSI4MDAiIGZpbGw9InVybCgjYmcpIi8+CiAgPGNpcmNsZSBjeD0iMTIwIiBjeT0iNjIwIiByPSIxMzAiIGZpbGw9IiNmZmYiIG9wYWNpdHk9Ii4yIi8+CiAgPGNpcmNsZSBjeD0iNjkwIiBjeT0iMTUwIiByPSI3NSIgZmlsbD0iI2ZmZiIgb3BhY2l0eT0iLjIyIi8+CiAgPGNpcmNsZSBjeD0iNjUwIiBjeT0iNjkwIiByPSI0MCIgZmlsbD0iI2ZmZiIgb3BhY2l0eT0iLjIiLz4KICA8ZyBzdHJva2U9IiMyYTFhMTciIHN0cm9rZS13aWR0aD0iNiIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIj4KICAgIDwhLS0gYnVybm91cyAtLT4KICAgIDxwYXRoIGQ9Ik00MCA4MDAgQzYwIDY5MCAxOTAgNjI1IDMwMCA2MDUgTDUwMCA2MDUgQzYxMCA2MjUgNzQwIDY5MCA3NjAgODAwIFoiIGZpbGw9IiM4YjVhMzYiLz4KICAgIDxwYXRoIGQ9Ik0yMDAgODAwIEMyMTUgNzMwIDI2MCA2NjUgMzIwIDYyNSBNNjAwIDgwMCBDNTg1IDczMCA1NDAgNjY1IDQ4MCA2MjUiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzZhNDIyNiIgc3Ryb2tlLXdpZHRoPSI1Ii8+CiAgICA8cGF0aCBkPSJNMzM1IDYwOCBMNDAwIDY5MCBMNDY1IDYwOCBaIiBmaWxsPSIjZjVlZmUwIi8+CiAgICA8IS0tIGNvdSAtLT4KICAgIDxwYXRoIGQ9Ik0zNTAgNTQwIEwzNTAgNjEyIEMzODAgNjQwIDQyMCA2NDAgNDUwIDYxMiBMNDUwIDU0MCBaIiBmaWxsPSIjYzc4ZDYyIi8+CiAgICA8IS0tIG9yZWlsbGVzIC0tPgogICAgPGVsbGlwc2UgY3g9IjI0OCIgY3k9IjQxMCIgcng9IjI2IiByeT0iNDAiIGZpbGw9IiNkYmE1N2EiLz4KICAgIDxlbGxpcHNlIGN4PSI1NTIiIGN5PSI0MTAiIHJ4PSIyNiIgcnk9IjQwIiBmaWxsPSIjZGJhNTdhIi8+CiAgICA8IS0tIHZpc2FnZSAtLT4KICAgIDxwYXRoIGQ9Ik0yNjIgMzg1IEMyNjIgMjg1IDMyNSAyNDAgNDAwIDI0MCBDNDc1IDI0MCA1MzggMjg1IDUzOCAzODUgQzUzOCA0NzUgNDkwIDU1NSA0MDAgNTU1IEMzMTAgNTU1IDI2MiA0NzUgMjYyIDM4NSBaIiBmaWxsPSIjZGJhNTdhIi8+CiAgICA8IS0tIHJpZGVzIGR1IGZyb250IC0tPgogICAgPHBhdGggZD0iTTMzNSAyNjIgUTQwMCAyNDQgNDY1IDI2MiBNMzQ1IDI4NSBRNDAwIDI3MiA0NTUgMjg1IiBmaWxsPSJub25lIiBzdHJva2U9IiNiOTgwNWEiIHN0cm9rZS13aWR0aD0iNCIvPgogICAgPCEtLSBjaMOpY2hpYSAtLT4KICAgIDxwYXRoIGQ9Ik0yNjggMjgwIEwyODQgMTY0IEMzMDAgMTQwIDUwMCAxNDAgNTE2IDE2NCBMNTMyIDI4MCBDNDgwIDI5NiAzMjAgMjk2IDI2OCAyODAgWiIgZmlsbD0iI2MwMzkyYiIvPgogICAgPHBhdGggZD0iTTI3NiAyNjIgQzMzMCAyODAgNDcwIDI4MCA1MjQgMjYyIiBmaWxsPSJub25lIiBzdHJva2U9IiM5NjJkMjIiIHN0cm9rZS13aWR0aD0iNSIvPgogICAgPHBhdGggZD0iTTQwMCAxNDYgQzQ0MCAxMjYgNDg2IDE1MCA0ODIgMjA0IiBmaWxsPSJub25lIiBzdHJva2Utd2lkdGg9IjUiLz4KICAgIDxyZWN0IHg9IjQ3MCIgeT0iMjAwIiB3aWR0aD0iMjQiIGhlaWdodD0iNDYiIHJ4PSI2IiBmaWxsPSIjMWQzNTU3Ii8+CiAgICA8IS0tIGJhcmJlIC0tPgogICAgPHBhdGggZD0iTTI1NCAzOTggQzI0NCA1MjAgMjk2IDY1MCA0MDAgNjYyIEM1MDQgNjUwIDU1NiA1MjAgNTQ2IDM5OCBDNTI4IDQ1MiA0ODQgNDc0IDQ0MCA0NzQgTDM2MCA0NzQgQzMxNiA0NzQgMjcyIDQ1MiAyNTQgMzk4IFoiIGZpbGw9IiNmNGYxZWEiLz4KICAgIDxwYXRoIGQ9Ik0zMDAgNTYwIFEzMjAgNjAwIDM1MCA2MTAgTTUwMCA1NjAgUTQ4MCA2MDAgNDUwIDYxMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjYzljNGI4IiBzdHJva2Utd2lkdGg9IjQiLz4KICAgIDwhLS0gbmV6IC0tPgogICAgPGVsbGlwc2UgY3g9IjQwMCIgY3k9IjQzMCIgcng9IjI3IiByeT0iMjIiIGZpbGw9IiNjYzkxNjciLz4KICAgIDwhLS0gbW91c3RhY2hlIC0tPgogICAgPHBhdGggZD0iTTMyNiA0NzAgQzM0NiA0MzggMzg4IDQ0NiA0MDAgNDYyIEM0MTIgNDQ2IDQ1NCA0MzggNDc0IDQ3MCBDNDQ2IDQ5NiA0MjAgNDgyIDQwMCA0ODYgQzM4MCA0ODIgMzU0IDQ5NiAzMjYgNDcwIFoiIGZpbGw9IiNmNGYxZWEiLz4KICAgIDwhLS0gc291cmNpbHMgLS0+CiAgICA8cGF0aCBkPSJNMjkyIDMzMCBRMzM1IDMwNiAzODAgMzI2IiBmaWxsPSJub25lIiBzdHJva2U9IiMyYTFhMTciIHN0cm9rZS13aWR0aD0iMjAiLz4KICAgIDxwYXRoIGQ9Ik0yOTIgMzMwIFEzMzUgMzA2IDM4MCAzMjYiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2Y0ZjFlYSIgc3Ryb2tlLXdpZHRoPSIxMCIvPgogICAgPHBhdGggZD0iTTQyMCAzMjYgUTQ2NSAzMDYgNTA4IDMzMCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMmExYTE3IiBzdHJva2Utd2lkdGg9IjIwIi8+CiAgICA8cGF0aCBkPSJNNDIwIDMyNiBRNDY1IDMwNiA1MDggMzMwIiBmaWxsPSJub25lIiBzdHJva2U9IiNmNGYxZWEiIHN0cm9rZS13aWR0aD0iMTAiLz4KICAgIDwhLS0geWV1eCAtLT4KICAgIDxlbGxpcHNlIGN4PSIzMzgiIGN5PSIzNzIiIHJ4PSIzNCIgcnk9IjI2IiBmaWxsPSIjZmZmIi8+CiAgICA8ZWxsaXBzZSBjeD0iNDYyIiBjeT0iMzcyIiByeD0iMzQiIHJ5PSIyNiIgZmlsbD0iI2ZmZiIvPgogICAgPGNpcmNsZSBjeD0iMzM4IiBjeT0iMzc0IiByPSIxNyIgZmlsbD0iIzRhMmYxZCIgc3Ryb2tlPSJub25lIi8+CiAgICA8Y2lyY2xlIGN4PSI0NjIiIGN5PSIzNzQiIHI9IjE3IiBmaWxsPSIjNGEyZjFkIiBzdHJva2U9Im5vbmUiLz4KICAgIDxjaXJjbGUgY3g9IjMzOCIgY3k9IjM3NCIgcj0iOCIgZmlsbD0iIzBmMDgwNiIgc3Ryb2tlPSJub25lIi8+CiAgICA8Y2lyY2xlIGN4PSI0NjIiIGN5PSIzNzQiIHI9IjgiIGZpbGw9IiMwZjA4MDYiIHN0cm9rZT0ibm9uZSIvPgogICAgPGNpcmNsZSBjeD0iMzQ0IiBjeT0iMzY3IiByPSI1LjUiIGZpbGw9IiNmZmYiIHN0cm9rZT0ibm9uZSIvPgogICAgPGNpcmNsZSBjeD0iNDY4IiBjeT0iMzY3IiByPSI1LjUiIGZpbGw9IiNmZmYiIHN0cm9rZT0ibm9uZSIvPgogICAgPHBhdGggZD0iTTI5NiAzOTIgUTMxMCA0MDQgMzI2IDQwMCBNNTA0IDM5MiBRNDkwIDQwNCA0NzQgNDAwIiBmaWxsPSJub25lIiBzdHJva2U9IiNiOTgwNWEiIHN0cm9rZS13aWR0aD0iNCIvPgogIDwvZz4KPC9zdmc+Cg==',
-    mouth: { x: .5, y: .645, size: .14, color: '#7a3b2e' },
-    eyes: Object.assign({}, EYE_CARTOON, { lx: .4225, ly: .465, rx: .5775, ry: .465, size: .085, ar: .38, lfill: '#dba57a' }) },
-  robo: { name: 'Robo', src: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MDAiIGhlaWdodD0iODAwIiB2aWV3Qm94PSIwIDAgODAwIDgwMCI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImJnIiB4MT0iMCIgeTE9IjAiIHgyPSIwIiB5Mj0iMSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCIgc3RvcC1jb2xvcj0iIzNhM2Y5YSIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzEyMTYzZiIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICA8L2RlZnM+CiAgPHJlY3Qgd2lkdGg9IjgwMCIgaGVpZ2h0PSI4MDAiIGZpbGw9InVybCgjYmcpIi8+CiAgPGcgZmlsbD0iI2ZmZiIgb3BhY2l0eT0iLjgiPgogICAgPGNpcmNsZSBjeD0iOTAiIGN5PSIxMTAiIHI9IjMiLz48Y2lyY2xlIGN4PSIxNzAiIGN5PSI2MCIgcj0iMiIvPjxjaXJjbGUgY3g9IjcwMCIgY3k9IjkwIiByPSIzIi8+PGNpcmNsZSBjeD0iNjQwIiBjeT0iMjAwIiByPSIyIi8+CiAgICA8Y2lyY2xlIGN4PSI2MCIgY3k9IjQwMCIgcj0iMiIvPjxjaXJjbGUgY3g9Ijc0MCIgY3k9IjQzMCIgcj0iMyIvPjxjaXJjbGUgY3g9IjExMCIgY3k9IjY5MCIgcj0iMiIvPjxjaXJjbGUgY3g9IjcwMCIgY3k9IjcyMCIgcj0iMyIvPgogIDwvZz4KICA8Y2lyY2xlIGN4PSI2NTAiIGN5PSI2ODAiIHI9IjEyMCIgZmlsbD0iI2ZmZiIgb3BhY2l0eT0iLjA1Ii8+CiAgPGcgc3Ryb2tlPSIjMGIxNTMwIiBzdHJva2Utd2lkdGg9IjYiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCI+CiAgICA8IS0tIGNvcnBzIC0tPgogICAgPHBhdGggZD0iTTExMCA4MDAgQzEyNSA2OTAgMjUwIDYzMCA0MDAgNjI2IEM1NTAgNjMwIDY3NSA2OTAgNjkwIDgwMCBaIiBmaWxsPSIjNGY2ZGY1Ii8+CiAgICA8Y2lyY2xlIGN4PSI0MDAiIGN5PSI3MzAiIHI9IjMwIiBmaWxsPSIjMTljM2ZmIi8+CiAgICA8Y2lyY2xlIGN4PSI0MDAiIGN5PSI3MzAiIHI9IjE0IiBmaWxsPSIjZThmNmZmIiBzdHJva2U9Im5vbmUiLz4KICAgIDwhLS0gY291IC0tPgogICAgPHJlY3QgeD0iMzUyIiB5PSI1NzAiIHdpZHRoPSI5NiIgaGVpZ2h0PSI2MiIgcng9IjEwIiBmaWxsPSIjOGZhM2I4Ii8+CiAgICA8cGF0aCBkPSJNMzUyIDU5MiBINDQ4IE0zNTIgNjEwIEg0NDgiIGZpbGw9Im5vbmUiIHN0cm9rZS13aWR0aD0iNCIvPgogICAgPCEtLSBhbnRlbm5lIC0tPgogICAgPHBhdGggZD0iTTQwMCAxOTAgTDQwMCAxMTgiIGZpbGw9Im5vbmUiIHN0cm9rZS13aWR0aD0iOCIvPgogICAgPGNpcmNsZSBjeD0iNDAwIiBjeT0iMTA0IiByPSIyMCIgZmlsbD0iI2ZmNWQ3MyIvPgogICAgPGNpcmNsZSBjeD0iMzk0IiBjeT0iOTciIHI9IjYiIGZpbGw9IiNmZmYiIHN0cm9rZT0ibm9uZSIgb3BhY2l0eT0iLjgiLz4KICAgIDwhLS0gb3JlaWxsZXMgLS0+CiAgICA8cmVjdCB4PSIxODYiIHk9IjMzMCIgd2lkdGg9IjQwIiBoZWlnaHQ9IjEyMCIgcng9IjE0IiBmaWxsPSIjOGZhM2I4Ii8+CiAgICA8cmVjdCB4PSI1NzQiIHk9IjMzMCIgd2lkdGg9IjQwIiBoZWlnaHQ9IjEyMCIgcng9IjE0IiBmaWxsPSIjOGZhM2I4Ii8+CiAgICA8IS0tIHTDqnRlIC0tPgogICAgPHJlY3QgeD0iMjIwIiB5PSIxOTAiIHdpZHRoPSIzNjAiIGhlaWdodD0iMzkyIiByeD0iOTYiIGZpbGw9IiNjZmQ4ZTMiLz4KICAgIDxwYXRoIGQ9Ik0yNjIgMjE0IFEzMDAgMjAwIDM0MCAyMDYiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2ZmZiIgc3Ryb2tlLXdpZHRoPSI4IiBvcGFjaXR5PSIuNyIvPgogICAgPGNpcmNsZSBjeD0iMjU2IiBjeT0iMjI4IiByPSI4IiBmaWxsPSIjOGZhM2I4Ii8+PGNpcmNsZSBjeD0iNTQ0IiBjeT0iMjI4IiByPSI4IiBmaWxsPSIjOGZhM2I4Ii8+CiAgICA8Y2lyY2xlIGN4PSIyNTYiIGN5PSI1NDgiIHI9IjgiIGZpbGw9IiM4ZmEzYjgiLz48Y2lyY2xlIGN4PSI1NDQiIGN5PSI1NDgiIHI9IjgiIGZpbGw9IiM4ZmEzYjgiLz4KICAgIDwhLS0gw6ljcmFuIC0tPgogICAgPHJlY3QgeD0iMjYyIiB5PSIyNjIiIHdpZHRoPSIyNzYiIGhlaWdodD0iMjcwIiByeD0iNjIiIGZpbGw9IiMwZjFhMzUiLz4KICAgIDwhLS0geWV1eCAtLT4KICAgIDxlbGxpcHNlIGN4PSIzMzgiIGN5PSIzNzAiIHJ4PSIzNiIgcnk9IjMwIiBmaWxsPSIjZThmNmZmIiBzdHJva2U9IiMxOWMzZmYiIHN0cm9rZS13aWR0aD0iNSIvPgogICAgPGVsbGlwc2UgY3g9IjQ2MiIgY3k9IjM3MCIgcng9IjM2IiByeT0iMzAiIGZpbGw9IiNlOGY2ZmYiIHN0cm9rZT0iIzE5YzNmZiIgc3Ryb2tlLXdpZHRoPSI1Ii8+CiAgICA8Y2lyY2xlIGN4PSIzMzgiIGN5PSIzNzIiIHI9IjIwIiBmaWxsPSIjMTljM2ZmIiBzdHJva2U9Im5vbmUiLz4KICAgIDxjaXJjbGUgY3g9IjQ2MiIgY3k9IjM3MiIgcj0iMjAiIGZpbGw9IiMxOWMzZmYiIHN0cm9rZT0ibm9uZSIvPgogICAgPGNpcmNsZSBjeD0iMzM4IiBjeT0iMzcyIiByPSI5IiBmaWxsPSIjMDQxMDFmIiBzdHJva2U9Im5vbmUiLz4KICAgIDxjaXJjbGUgY3g9IjQ2MiIgY3k9IjM3MiIgcj0iOSIgZmlsbD0iIzA0MTAxZiIgc3Ryb2tlPSJub25lIi8+CiAgICA8Y2lyY2xlIGN4PSIzNDYiIGN5PSIzNjQiIHI9IjYiIGZpbGw9IiNmZmYiIHN0cm9rZT0ibm9uZSIvPgogICAgPGNpcmNsZSBjeD0iNDcwIiBjeT0iMzY0IiByPSI2IiBmaWxsPSIjZmZmIiBzdHJva2U9Im5vbmUiLz4KICAgIDwhLS0gam91ZXMgLS0+CiAgICA8ZWxsaXBzZSBjeD0iMzAwIiBjeT0iNDUyIiByeD0iMjAiIHJ5PSIxMiIgZmlsbD0iI2ZmNmE4YSIgb3BhY2l0eT0iLjM1IiBzdHJva2U9Im5vbmUiLz4KICAgIDxlbGxpcHNlIGN4PSI1MDAiIGN5PSI0NTIiIHJ4PSIyMCIgcnk9IjEyIiBmaWxsPSIjZmY2YThhIiBvcGFjaXR5PSIuMzUiIHN0cm9rZT0ibm9uZSIvPgogIDwvZz4KPC9zdmc+Cg==',
-    mouth: { x: .5, y: .6, size: .15, color: '#19c3ff', pal: ROBO_PAL },
-    eyes: Object.assign({}, EYE_CARTOON, { lx: .4225, ly: .4625, rx: .5775, ry: .4625, size: .09, ar: .42, sclera: '#e8f6ff', lfill: '#0f1a35', lc: '#19c3ff' }) },
-  samir: { name: 'Samir', src: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MDAiIGhlaWdodD0iODAwIiB2aWV3Qm94PSIwIDAgODAwIDgwMCI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImJnIiB4MT0iMCIgeTE9IjAiIHgyPSIwIiB5Mj0iMSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCIgc3RvcC1jb2xvcj0iI2RmZTdlYyIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzlmYjRjMiIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICA8L2RlZnM+CiAgPHJlY3Qgd2lkdGg9IjgwMCIgaGVpZ2h0PSI4MDAiIGZpbGw9InVybCgjYmcpIi8+CiAgPGNpcmNsZSBjeD0iMTEwIiBjeT0iMTQwIiByPSI4NSIgZmlsbD0iI2ZmZiIgb3BhY2l0eT0iLjI1Ii8+CiAgPGNpcmNsZSBjeD0iNzAwIiBjeT0iNjQwIiByPSIxMzAiIGZpbGw9IiNmZmYiIG9wYWNpdHk9Ii4xOCIvPgogIDxjaXJjbGUgY3g9IjY5MCIgY3k9IjEzMCIgcj0iMzgiIGZpbGw9IiNmZmYiIG9wYWNpdHk9Ii4yNSIvPgogIDxnIHN0cm9rZT0iIzJhMWExNyIgc3Ryb2tlLXdpZHRoPSI2IiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2UtbGluZWNhcD0icm91bmQiPgogICAgPCEtLSB0cmVuY2ggLS0+CiAgICA8cGF0aCBkPSJNNTAgODAwIEM3MCA2OTAgMTkwIDYyNSAzMDAgNjA1IEw1MDAgNjA1IEM2MTAgNjI1IDczMCA2OTAgNzUwIDgwMCBaIiBmaWxsPSIjYzlhNTZiIi8+CiAgICA8cGF0aCBkPSJNMzUwIDUyMCBMMzUwIDYwMCBDMzgwIDYzMCA0MjAgNjMwIDQ1MCA2MDAgTDQ1MCA1MjAgWiIgZmlsbD0iI2M3OGQ2MiIvPgogICAgPHBhdGggZD0iTTMzNSA2MDYgTDQwMCA3MDAgTDQ2NSA2MDYgWiIgZmlsbD0iI2Y1ZjFlOCIvPgogICAgPCEtLSBiYWRnZSBwcmVzc2UgLS0+CiAgICA8cGF0aCBkPSJNMzUyIDYwNiBMMzg0IDc0MiBNNDQ4IDYwNiBMNDE2IDc0MiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTU2NWMwIiBzdHJva2Utd2lkdGg9IjgiLz4KICAgIDxyZWN0IHg9IjM2NiIgeT0iNzQwIiB3aWR0aD0iNjgiIGhlaWdodD0iNTAiIHJ4PSI2IiBmaWxsPSIjZmZmIi8+CiAgICA8cmVjdCB4PSIzNjYiIHk9Ijc0MCIgd2lkdGg9IjY4IiBoZWlnaHQ9IjE0IiByeD0iNCIgZmlsbD0iIzE1NjVjMCIgc3Ryb2tlPSJub25lIi8+CiAgICA8cGF0aCBkPSJNMzc4IDc3MCBINDIyIE0zNzggNzgwIEg0MTAiIGZpbGw9Im5vbmUiIHN0cm9rZS13aWR0aD0iMyIvPgogICAgPCEtLSBjb2xzIHJlbGV2w6lzIC0tPgogICAgPHBhdGggZD0iTTMwMCA2MDUgTDM0MiA1NTYgTDM3NiA2NDIgTDMzNiA2MjIgWiIgZmlsbD0iI2I4OTE0ZiIvPgogICAgPHBhdGggZD0iTTUwMCA2MDUgTDQ1OCA1NTYgTDQyNCA2NDIgTDQ2NCA2MjIgWiIgZmlsbD0iI2I4OTE0ZiIvPgogICAgPCEtLSBvcmVpbGxlcyAtLT4KICAgIDxlbGxpcHNlIGN4PSIyNDgiIGN5PSI0MTAiIHJ4PSIyNiIgcnk9IjQwIiBmaWxsPSIjZTBhODc4Ii8+CiAgICA8ZWxsaXBzZSBjeD0iNTUyIiBjeT0iNDEwIiByeD0iMjYiIHJ5PSI0MCIgZmlsbD0iI2UwYTg3OCIvPgogICAgPCEtLSB2aXNhZ2UgLS0+CiAgICA8cGF0aCBkPSJNMjYyIDM4NSBDMjYyIDI4NSAzMjUgMjQwIDQwMCAyNDAgQzQ3NSAyNDAgNTM4IDI4NSA1MzggMzg1IEM1MzggNDc1IDQ5MCA1NTUgNDAwIDU1NSBDMzEwIDU1NSAyNjIgNDc1IDI2MiAzODUgWiIgZmlsbD0iI2UwYTg3OCIvPgogICAgPCEtLSBiYXJiZSBkZSB0cm9pcyBqb3VycyAtLT4KICAgIDxwYXRoIGQ9Ik0yNjYgNDMwIEMyNzAgNTIwIDMyMiA1NTYgNDAwIDU1NiBDNDc4IDU1NiA1MzAgNTIwIDUzNCA0MzAgQzUwOCA0NjggNDcwIDQ3OCA0MDAgNDc4IEMzMzAgNDc4IDI5MiA0NjggMjY2IDQzMCBaIiBmaWxsPSIjM2EyYTIyIiBvcGFjaXR5PSIuMyIgc3Ryb2tlPSJub25lIi8+CiAgICA8IS0tIGNoZXZldXggLS0+CiAgICA8cGF0aCBkPSJNMjQwIDM0MCBDMjIyIDIzNSAzMDAgMTQwIDQwMCAxNDAgQzUwMCAxNDAgNTc4IDIzNSA1NjAgMzQwIEM1NDggMjkwIDUyNSAyNTUgNDg1IDI0NCBDNDYwIDI2OCA0MjUgMjYyIDQwMCAyNTYgQzM3MiAyNjQgMzM4IDI2OCAzMTUgMjQ0IEMyNzUgMjU1IDI1MiAyOTAgMjQwIDM0MCBaIiBmaWxsPSIjNWEzYTIyIi8+CiAgICA8cGF0aCBkPSJNMzAwIDE4MCBDMzEyIDEyOCAzOTIgMTA4IDQ2MiAxMzAgQzUwNCAxNDQgNTQwIDE3NiA1NDggMjE0IEM1MDQgMTcyIDQwMCAxNjAgMzAwIDE4MCBaIiBmaWxsPSIjNWEzYTIyIi8+CiAgICA8cGF0aCBkPSJNMzMwIDE2OCBDMzcyIDE0NiA0MzAgMTQ0IDQ4NiAxNjgiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzhhNmE0YSIgc3Ryb2tlLXdpZHRoPSI1IiBvcGFjaXR5PSIuNiIvPgogICAgPCEtLSBzb3VyY2lscyAtLT4KICAgIDxwYXRoIGQ9Ik0yOTIgMzI4IFEzMzggMzA2IDM4MCAzMjQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzNhMjQxNSIgc3Ryb2tlLXdpZHRoPSIxMyIvPgogICAgPHBhdGggZD0iTTQyMCAzMjQgUTQ2MiAzMDYgNTA4IDMyOCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjM2EyNDE1IiBzdHJva2Utd2lkdGg9IjEzIi8+CiAgICA8IS0tIHlldXggLS0+CiAgICA8ZWxsaXBzZSBjeD0iMzM4IiBjeT0iMzcwIiByeD0iMzYiIHJ5PSIyOSIgZmlsbD0iI2ZmZiIvPgogICAgPGVsbGlwc2UgY3g9IjQ2MiIgY3k9IjM3MCIgcng9IjM2IiByeT0iMjkiIGZpbGw9IiNmZmYiLz4KICAgIDxjaXJjbGUgY3g9IjMzOCIgY3k9IjM3MiIgcj0iMTkiIGZpbGw9IiMzYjJhMjAiIHN0cm9rZT0ibm9uZSIvPgogICAgPGNpcmNsZSBjeD0iNDYyIiBjeT0iMzcyIiByPSIxOSIgZmlsbD0iIzNiMmEyMCIgc3Ryb2tlPSJub25lIi8+CiAgICA8Y2lyY2xlIGN4PSIzMzgiIGN5PSIzNzIiIHI9IjkiIGZpbGw9IiMwZjA4MDYiIHN0cm9rZT0ibm9uZSIvPgogICAgPGNpcmNsZSBjeD0iNDYyIiBjeT0iMzcyIiByPSI5IiBmaWxsPSIjMGYwODA2IiBzdHJva2U9Im5vbmUiLz4KICAgIDxjaXJjbGUgY3g9IjM0NSIgY3k9IjM2NCIgcj0iNiIgZmlsbD0iI2ZmZiIgc3Ryb2tlPSJub25lIi8+CiAgICA8Y2lyY2xlIGN4PSI0NjkiIGN5PSIzNjQiIHI9IjYiIGZpbGw9IiNmZmYiIHN0cm9rZT0ibm9uZSIvPgogICAgPHBhdGggZD0iTTMwMiAzOTggUTMxNiA0MDggMzMyIDQwNCBNNDk4IDM5OCBRNDg0IDQwOCA0NjggNDA0IiBmaWxsPSJub25lIiBzdHJva2U9IiNhOTc0NGMiIHN0cm9rZS13aWR0aD0iNCIvPgogICAgPCEtLSBuZXogLS0+CiAgICA8cGF0aCBkPSJNNDAwIDQxMCBDMzkwIDQzMiAzOTIgNDQ0IDQwNCA0NDYgQzQxMSA0NDcgNDE2IDQ0MyA0MTggNDM4IiBmaWxsPSJub25lIiBzdHJva2Utd2lkdGg9IjUiLz4KICA8L2c+Cjwvc3ZnPgo=',
-    mouth: { x: .5, y: .6225, size: .15, color: '#6b3a2a' },
-    eyes: Object.assign({}, EYE_CARTOON, { lx: .4225, ly: .4625, rx: .5775, ry: .4625, size: .09, ar: .4, lfill: '#e0a878' }) },
-  nadia: { name: 'Nadia', src: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MDAiIGhlaWdodD0iODAwIiB2aWV3Qm94PSIwIDAgODAwIDgwMCI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImJnIiB4MT0iMCIgeTE9IjAiIHgyPSIwIiB5Mj0iMSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCIgc3RvcC1jb2xvcj0iI2ZmZjFiOCIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iI2ZmY2Y2YiIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICA8L2RlZnM+CiAgPHJlY3Qgd2lkdGg9IjgwMCIgaGVpZ2h0PSI4MDAiIGZpbGw9InVybCgjYmcpIi8+CiAgPGNpcmNsZSBjeD0iMTIwIiBjeT0iNjUwIiByPSIxMjUiIGZpbGw9IiNmZmYiIG9wYWNpdHk9Ii4yNSIvPgogIDxjaXJjbGUgY3g9IjY5MCIgY3k9IjE0MCIgcj0iODAiIGZpbGw9IiNmZmYiIG9wYWNpdHk9Ii4yOCIvPgogIDxjaXJjbGUgY3g9IjY0MCIgY3k9IjcwMCIgcj0iMzYiIGZpbGw9IiNmZmYiIG9wYWNpdHk9Ii4yNSIvPgogIDxnIHN0cm9rZT0iIzJhMWExNyIgc3Ryb2tlLXdpZHRoPSI2IiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2UtbGluZWNhcD0icm91bmQiPgogICAgPCEtLSBibGF6ZXIgLS0+CiAgICA8cGF0aCBkPSJNNTAgODAwIEM3MCA2OTAgMTkwIDYyNSAzMDAgNjA1IEw1MDAgNjA1IEM2MTAgNjI1IDczMCA2OTAgNzUwIDgwMCBaIiBmaWxsPSIjOGUyZjRhIi8+CiAgICA8cGF0aCBkPSJNMzUwIDUyMCBMMzUwIDYwMCBDMzgwIDYzMCA0MjAgNjMwIDQ1MCA2MDAgTDQ1MCA1MjAgWiIgZmlsbD0iI2Q3OWQ3NCIvPgogICAgPHBhdGggZD0iTTMzOCA2MDYgTDQwMCA3MDIgTDQ2MiA2MDYgWiIgZmlsbD0iI2ZiZjdmMCIvPgogICAgPHBhdGggZD0iTTMwMCA2MDUgTDM3MiA2MDYgTDM0NiA2OTAgWiIgZmlsbD0iI2EyM2E1OCIvPgogICAgPHBhdGggZD0iTTUwMCA2MDUgTDQyOCA2MDYgTDQ1NCA2OTAgWiIgZmlsbD0iI2EyM2E1OCIvPgogICAgPGNpcmNsZSBjeD0iMzMwIiBjeT0iNjM2IiByPSIxMCIgZmlsbD0iI2YyYzE0ZSIvPgogICAgPCEtLSBtaWNybyBjcmF2YXRlIC0tPgogICAgPHBhdGggZD0iTTQ2MiA2NDAgQzQ3MCA2NjAgNDY2IDY3NiA0NjIgNjkwIiBmaWxsPSJub25lIiBzdHJva2Utd2lkdGg9IjMiLz4KICAgIDxyZWN0IHg9IjQ1MiIgeT0iNjI2IiB3aWR0aD0iMTYiIGhlaWdodD0iMjYiIHJ4PSI1IiBmaWxsPSIjMWIxYjI0Ii8+CiAgICA8IS0tIGNoZXZldXggYXJyacOocmUgOiBjYXJyw6kgLS0+CiAgICA8cGF0aCBkPSJNMjI2IDM3MCBDMjE0IDIzMiAyOTAgMTQ4IDQwMCAxNDggQzUxMCAxNDggNTg2IDIzMiA1NzQgMzcwIEM1NzQgNDMyIDU2MCA0NzIgNTQ2IDUwNiBMMjU0IDUwNiBDMjQwIDQ3MiAyMjYgNDMyIDIyNiAzNzAgWiIgZmlsbD0iIzFkMWEyNCIvPgogICAgPCEtLSB2aXNhZ2UgLS0+CiAgICA8cGF0aCBkPSJNMjYyIDM4NSBDMjYyIDI4NSAzMjUgMjQwIDQwMCAyNDAgQzQ3NSAyNDAgNTM4IDI4NSA1MzggMzg1IEM1MzggNDc1IDQ5MCA1NTUgNDAwIDU1NSBDMzEwIDU1NSAyNjIgNDc1IDI2MiAzODUgWiIgZmlsbD0iI2U5YjQ4YSIvPgogICAgPCEtLSBmcmFuZ2Ugc3VyIGxlIGPDtHTDqSAtLT4KICAgIDxwYXRoIGQ9Ik0yNjIgMzQ2IEMyNTQgMjM0IDM0MCAxODggNDIwIDE5NCBDNTAyIDIwMCA1NTAgMjU2IDUzOCAzNDYgQzUyMCAzMDAgNDcwIDI2OCA0MTAgMjYyIEMzNTAgMjYyIDI5MCAyOTAgMjYyIDM0NiBaIiBmaWxsPSIjMWQxYTI0Ii8+CiAgICA8cGF0aCBkPSJNMzAwIDIxNCBDMzQwIDE5NiA0MDAgMTkyIDQ1MCAyMDQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzU4NTA2YSIgc3Ryb2tlLXdpZHRoPSI1IiBvcGFjaXR5PSIuNiIvPgogICAgPCEtLSBib3VjbGVzIGQnb3JlaWxsZXMgLS0+CiAgICA8Y2lyY2xlIGN4PSIyNTgiIGN5PSI0ODYiIHI9IjkiIGZpbGw9IiNmMmMxNGUiLz4KICAgIDxjaXJjbGUgY3g9IjU0MiIgY3k9IjQ4NiIgcj0iOSIgZmlsbD0iI2YyYzE0ZSIvPgogICAgPCEtLSBzb3VyY2lscyAtLT4KICAgIDxwYXRoIGQ9Ik0yOTQgMzI2IFEzMzggMzAwIDM4MCAzMjIiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzFkMWEyNCIgc3Ryb2tlLXdpZHRoPSIxMCIvPgogICAgPHBhdGggZD0iTTQyMCAzMjIgUTQ2MiAzMDAgNTA2IDMyNiIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMWQxYTI0IiBzdHJva2Utd2lkdGg9IjEwIi8+CiAgICA8IS0tIHlldXggLS0+CiAgICA8ZWxsaXBzZSBjeD0iMzM4IiBjeT0iMzcwIiByeD0iMzYiIHJ5PSIyOSIgZmlsbD0iI2ZmZiIvPgogICAgPGVsbGlwc2UgY3g9IjQ2MiIgY3k9IjM3MCIgcng9IjM2IiByeT0iMjkiIGZpbGw9IiNmZmYiLz4KICAgIDxjaXJjbGUgY3g9IjMzOCIgY3k9IjM3MiIgcj0iMTkiIGZpbGw9IiM0YTJmMWQiIHN0cm9rZT0ibm9uZSIvPgogICAgPGNpcmNsZSBjeD0iNDYyIiBjeT0iMzcyIiByPSIxOSIgZmlsbD0iIzRhMmYxZCIgc3Ryb2tlPSJub25lIi8+CiAgICA8Y2lyY2xlIGN4PSIzMzgiIGN5PSIzNzIiIHI9IjkiIGZpbGw9IiMwZjA4MDYiIHN0cm9rZT0ibm9uZSIvPgogICAgPGNpcmNsZSBjeD0iNDYyIiBjeT0iMzcyIiByPSI5IiBmaWxsPSIjMGYwODA2IiBzdHJva2U9Im5vbmUiLz4KICAgIDxjaXJjbGUgY3g9IjM0NSIgY3k9IjM2NCIgcj0iNiIgZmlsbD0iI2ZmZiIgc3Ryb2tlPSJub25lIi8+CiAgICA8Y2lyY2xlIGN4PSI0NjkiIGN5PSIzNjQiIHI9IjYiIGZpbGw9IiNmZmYiIHN0cm9rZT0ibm9uZSIvPgogICAgPHBhdGggZD0iTTMwMiAzNTQgUTI5MiAzNTAgMjg2IDM0MCBNMzEwIDM0NCBRMzA0IDMzNCAzMDQgMzI0IiBmaWxsPSJub25lIiBzdHJva2Utd2lkdGg9IjUiLz4KICAgIDxwYXRoIGQ9Ik00OTggMzU0IFE1MDggMzUwIDUxNCAzNDAgTTQ5MCAzNDQgUTQ5NiAzMzQgNDk2IDMyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlLXdpZHRoPSI1Ii8+CiAgICA8IS0tIG5leiArIGpvdWVzIC0tPgogICAgPHBhdGggZD0iTTQwMCA0MTYgQzM5MiA0MzQgMzk0IDQ0NCA0MDQgNDQ2IEM0MTAgNDQ3IDQxNCA0NDQgNDE2IDQ0MCIgZmlsbD0ibm9uZSIgc3Ryb2tlLXdpZHRoPSI1Ii8+CiAgICA8ZWxsaXBzZSBjeD0iMjkyIiBjeT0iNDY4IiByeD0iMjAiIHJ5PSIxMyIgZmlsbD0iI2ZmN2Y5YSIgb3BhY2l0eT0iLjQiIHN0cm9rZT0ibm9uZSIvPgogICAgPGVsbGlwc2UgY3g9IjUwOCIgY3k9IjQ2OCIgcng9IjIwIiByeT0iMTMiIGZpbGw9IiNmZjdmOWEiIG9wYWNpdHk9Ii40IiBzdHJva2U9Im5vbmUiLz4KICA8L2c+Cjwvc3ZnPgo=',
-    mouth: { x: .5, y: .6225, size: .15, color: '#b02a4e' },
-    eyes: Object.assign({}, EYE_CARTOON, { lx: .4225, ly: .4625, rx: .5775, ry: .4625, size: .09, ar: .4, lfill: '#e9b48a' }) },
-  zak: { name: 'Zak', src: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI4MDAiIGhlaWdodD0iODAwIiB2aWV3Qm94PSIwIDAgODAwIDgwMCI+CiAgPGRlZnM+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImJnIiB4MT0iMCIgeTE9IjAiIHgyPSIwIiB5Mj0iMSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCIgc3RvcC1jb2xvcj0iI2JmZjBmZiIvPjxzdG9wIG9mZnNldD0iMSIgc3RvcC1jb2xvcj0iIzRjYzlmMCIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICA8L2RlZnM+CiAgPHJlY3Qgd2lkdGg9IjgwMCIgaGVpZ2h0PSI4MDAiIGZpbGw9InVybCgjYmcpIi8+CiAgPGNpcmNsZSBjeD0iMTMwIiBjeT0iMTUwIiByPSI5MCIgZmlsbD0iI2ZmZiIgb3BhY2l0eT0iLjI1Ii8+CiAgPGNpcmNsZSBjeD0iNjkwIiBjeT0iNjUwIiByPSIxMzUiIGZpbGw9IiNmZmYiIG9wYWNpdHk9Ii4yIi8+CiAgPGNpcmNsZSBjeD0iNjYwIiBjeT0iMTIwIiByPSIzNCIgZmlsbD0iI2ZmZiIgb3BhY2l0eT0iLjI4Ii8+CiAgPGcgc3Ryb2tlPSIjMmExYTE3IiBzdHJva2Utd2lkdGg9IjYiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCI+CiAgICA8IS0tIHN3ZWF0IGphdW5lIC0tPgogICAgPHBhdGggZD0iTTUwIDgwMCBDNzAgNjkwIDE5MCA2MjUgMzAwIDYwNSBMNTAwIDYwNSBDNjEwIDYyNSA3MzAgNjkwIDc1MCA4MDAgWiIgZmlsbD0iI2ZmZDIzZiIvPgogICAgPHBhdGggZD0iTTMwMCA2MDUgQzMzMCA2NjUgNDcwIDY2NSA1MDAgNjA1IEM0NzAgNTgwIDMzMCA1ODAgMzAwIDYwNSBaIiBmaWxsPSIjZTZiMjFmIi8+CiAgICA8cGF0aCBkPSJNMzUwIDUyMCBMMzUwIDYwNCBDMzgwIDYzMiA0MjAgNjMyIDQ1MCA2MDQgTDQ1MCA1MjAgWiIgZmlsbD0iI2M5OGY2NiIvPgogICAgPHBhdGggZD0iTTM2MiA2NDAgTDM1NiA3MTYgTTQzOCA2NDAgTDQ0NCA3MTYiIGZpbGw9Im5vbmUiLz4KICAgIDxjaXJjbGUgY3g9IjM1NiIgY3k9IjcyNCIgcj0iOSIgZmlsbD0iI2ZmZiIvPgogICAgPGNpcmNsZSBjeD0iNDQ0IiBjeT0iNzI0IiByPSI5IiBmaWxsPSIjZmZmIi8+CiAgICA8IS0tIG3DqGNoZXMgc291cyBsYSBjYXNxdWV0dGUgLS0+CiAgICA8ZyBmaWxsPSIjNGEyYzFhIiBzdHJva2U9IiMyYTFhMTciIHN0cm9rZS13aWR0aD0iMTIiPgogICAgICA8Y2lyY2xlIGN4PSIyNjIiIGN5PSIzNDAiIHI9IjI0Ii8+PGNpcmNsZSBjeD0iMjY4IiBjeT0iMzg0IiByPSIyMiIvPgogICAgICA8Y2lyY2xlIGN4PSI1MzgiIGN5PSIzNDAiIHI9IjI0Ii8+PGNpcmNsZSBjeD0iNTMyIiBjeT0iMzg0IiByPSIyMiIvPgogICAgPC9nPgogICAgPGcgZmlsbD0iIzRhMmMxYSIgc3Ryb2tlPSJub25lIj4KICAgICAgPGNpcmNsZSBjeD0iMjYyIiBjeT0iMzQwIiByPSIyNCIvPjxjaXJjbGUgY3g9IjI2OCIgY3k9IjM4NCIgcj0iMjIiLz4KICAgICAgPGNpcmNsZSBjeD0iNTM4IiBjeT0iMzQwIiByPSIyNCIvPjxjaXJjbGUgY3g9IjUzMiIgY3k9IjM4NCIgcj0iMjIiLz4KICAgIDwvZz4KICAgIDwhLS0gdmlzYWdlIC0tPgogICAgPHBhdGggZD0iTTI2MiAzODUgQzI2MiAyODUgMzI1IDI0MCA0MDAgMjQwIEM0NzUgMjQwIDUzOCAyODUgNTM4IDM4NSBDNTM4IDQ3NSA0OTAgNTU1IDQwMCA1NTUgQzMxMCA1NTUgMjYyIDQ3NSAyNjIgMzg1IFoiIGZpbGw9IiNkOWEzN2EiLz4KICAgIDwhLS0gc291cmNpbHMgLS0+CiAgICA8cGF0aCBkPSJNMjkyIDMzMCBRMzM2IDMxMCAzODAgMzI2IiBmaWxsPSJub25lIiBzdHJva2U9IiMzYTI0MTUiIHN0cm9rZS13aWR0aD0iMTEiLz4KICAgIDxwYXRoIGQ9Ik00MjAgMzI2IFE0NjQgMzEwIDUwOCAzMzAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzNhMjQxNSIgc3Ryb2tlLXdpZHRoPSIxMSIvPgogICAgPCEtLSB5ZXV4IC0tPgogICAgPGVsbGlwc2UgY3g9IjMzOCIgY3k9IjM3MCIgcng9IjM2IiByeT0iMjkiIGZpbGw9IiNmZmYiLz4KICAgIDxlbGxpcHNlIGN4PSI0NjIiIGN5PSIzNzAiIHJ4PSIzNiIgcnk9IjI5IiBmaWxsPSIjZmZmIi8+CiAgICA8Y2lyY2xlIGN4PSIzMzgiIGN5PSIzNzIiIHI9IjE5IiBmaWxsPSIjMmYyYTFjIiBzdHJva2U9Im5vbmUiLz4KICAgIDxjaXJjbGUgY3g9IjQ2MiIgY3k9IjM3MiIgcj0iMTkiIGZpbGw9IiMyZjJhMWMiIHN0cm9rZT0ibm9uZSIvPgogICAgPGNpcmNsZSBjeD0iMzM4IiBjeT0iMzcyIiByPSI5IiBmaWxsPSIjMGYwODA2IiBzdHJva2U9Im5vbmUiLz4KICAgIDxjaXJjbGUgY3g9IjQ2MiIgY3k9IjM3MiIgcj0iOSIgZmlsbD0iIzBmMDgwNiIgc3Ryb2tlPSJub25lIi8+CiAgICA8Y2lyY2xlIGN4PSIzNDUiIGN5PSIzNjQiIHI9IjYiIGZpbGw9IiNmZmYiIHN0cm9rZT0ibm9uZSIvPgogICAgPGNpcmNsZSBjeD0iNDY5IiBjeT0iMzY0IiByPSI2IiBmaWxsPSIjZmZmIiBzdHJva2U9Im5vbmUiLz4KICAgIDwhLS0gbmV6ICsgam91ZXMgLS0+CiAgICA8cGF0aCBkPSJNNDAwIDQxMCBDMzkwIDQzMiAzOTIgNDQ0IDQwNCA0NDYgQzQxMSA0NDcgNDE2IDQ0MyA0MTggNDM4IiBmaWxsPSJub25lIiBzdHJva2Utd2lkdGg9IjUiLz4KICAgIDxlbGxpcHNlIGN4PSIyOTIiIGN5PSI0NjYiIHJ4PSIyMCIgcnk9IjEzIiBmaWxsPSIjZmY3ZjZhIiBvcGFjaXR5PSIuMzUiIHN0cm9rZT0ibm9uZSIvPgogICAgPGVsbGlwc2UgY3g9IjUwOCIgY3k9IjQ2NiIgcng9IjIwIiByeT0iMTMiIGZpbGw9IiNmZjdmNmEiIG9wYWNpdHk9Ii4zNSIgc3Ryb2tlPSJub25lIi8+CiAgICA8IS0tIGNhc3F1ZXR0ZSAtLT4KICAgIDxwYXRoIGQ9Ik0yNTUgMjkyIEMyNTUgMTkwIDMzMCAxNDggNDAwIDE0OCBDNDcwIDE0OCA1NDUgMTkwIDU0NSAyOTIgWiIgZmlsbD0iI2U2Mzk0NiIvPgogICAgPHBhdGggZD0iTTI0MCAyODggQzMwMCAyNjIgNTAwIDI2MiA1NjAgMjg4IEM1MzAgMzEyIDI3MCAzMTIgMjQwIDI4OCBaIiBmaWxsPSIjYjAyYjM3Ii8+CiAgICA8Y2lyY2xlIGN4PSI0MDAiIGN5PSIyMTQiIHI9IjIyIiBmaWxsPSIjZmZmIiBzdHJva2U9Im5vbmUiLz4KICAgIDxwYXRoIGQ9Ik0zODggMjE0IEw0MDAgMjAyIEw0MTIgMjE0IEw0MDAgMjI2IFoiIGZpbGw9IiNlNjM5NDYiIHN0cm9rZT0ibm9uZSIvPgogICAgPCEtLSBjYXNxdWUgYXVkaW8gLS0+CiAgICA8cGF0aCBkPSJNMjM4IDM5MiBDMjI2IDExOCA1NzQgMTE4IDU2MiAzOTIiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzJhMWExNyIgc3Ryb2tlLXdpZHRoPSIyMiIvPgogICAgPHBhdGggZD0iTTIzOCAzOTIgQzIyNiAxMTggNTc0IDExOCA1NjIgMzkyIiBmaWxsPSJub25lIiBzdHJva2U9IiMzYTNkNWMiIHN0cm9rZS13aWR0aD0iMTIiLz4KICAgIDxyZWN0IHg9IjIwNiIgeT0iMzUyIiB3aWR0aD0iNDYiIGhlaWdodD0iOTYiIHJ4PSIyMCIgZmlsbD0iIzJiMmQ0MiIvPgogICAgPHJlY3QgeD0iNTQ4IiB5PSIzNTIiIHdpZHRoPSI0NiIgaGVpZ2h0PSI5NiIgcng9IjIwIiBmaWxsPSIjMmIyZDQyIi8+CiAgICA8cmVjdCB4PSIyMTYiIHk9IjM3NiIgd2lkdGg9IjE0IiBoZWlnaHQ9IjQ4IiByeD0iNyIgZmlsbD0iIzRjYzlmMCIgc3Ryb2tlPSJub25lIi8+CiAgICA8cmVjdCB4PSI1NzAiIHk9IjM3NiIgd2lkdGg9IjE0IiBoZWlnaHQ9IjQ4IiByeD0iNyIgZmlsbD0iIzRjYzlmMCIgc3Ryb2tlPSJub25lIi8+CiAgPC9nPgo8L3N2Zz4K',
-    mouth: { x: .5, y: .6225, size: .16, color: '#a8483a' },
-    eyes: Object.assign({}, EYE_CARTOON, { lx: .4225, ly: .4625, rx: .5775, ry: .4625, size: .09, ar: .4, lfill: '#d9a37a' }) }
-};
+const AVATARS = { karim: 'Karim', yasmine: 'Yasmine', fennec: 'Fennec', lina: 'Lina', hakim: 'Hakim', robo: 'Robo', samir: 'Samir', nadia: 'Nadia', zak: 'Zak' };
 function useAvatar(key){
-  const a = AVATARS[key], im = new Image();
-  im.onload = () => {
-    setAvSize(im.naturalWidth, im.naturalHeight);
-    S.img = im; S.cut = null; S.avName = a.name; S.frame = null;
-    makeCut(a.src).then(cu => { if (S.img === im) S.cut = cu; });
-    S.mouth = Object.assign({ rot: 0, pal: CARTOON_PAL }, a.mouth);
-    S.eyes = Object.assign({}, a.eyes);
-    S.guide = false;
-    syncSliders(); setMode('image');
-    setStatus('Avatar ' + a.name + '. Tu peux ajuster la bouche et les yeux avec les réglages.');
-  };
-  im.src = a.src;
+  setAvSize(640, 640);
+  S.img = null; S.cut = null; S.frame = null; S.look = key; S.avName = AVATARS[key];
+  setMode('avatar'); setStatus('Avatar ' + AVATARS[key] + ' (visage simple).');
 }
 
 /* effigie dorée intégrée (avatar par défaut) */
@@ -1688,6 +1771,13 @@ readStudio();
     const b = document.createElement('button'); b.textContent = GR[k].label; b.addEventListener('click', () => setGrimace(k)); box.appendChild(b);
   });
   $('grAuto').addEventListener('change', e => { S.gr.auto = e.target.checked; S.gr.nt = S.t; });
+  const sync = () => {
+    const on = $('grFun').checked; S.gr.fun = on;
+    box.querySelectorAll('button').forEach(b => b.disabled = !on);
+    $('grAuto').disabled = !on;
+    if (!on){ S.gr.cur = null; S.gr.auto = false; $('grAuto').checked = false; }
+  };
+  $('grFun').addEventListener('change', sync); sync();
 })();
 
 setMode('avatar');
